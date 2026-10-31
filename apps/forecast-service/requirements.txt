@@ -1,0 +1,5 @@
+# torch is installed separately from the CPU index (see Dockerfile / README).
+chronos-forecasting==2.3.2
+fastapi==0.115.6
+uvicorn==0.32.1
+pandas>=2,<3

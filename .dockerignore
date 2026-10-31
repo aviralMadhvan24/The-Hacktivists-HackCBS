@@ -1,0 +1,15 @@
+**/node_modules
+**/.venv
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+backend/data
+backend/.devdb
+**/test-results
+los2
+los2.xcodeproj
+.agents
+*.pdf
+FinSight_Pitch_Deck.html
+.git

@@ -17,7 +17,7 @@ test('mobile layout has no horizontal overflow', async ({ page }) => {
   await expect(page.getByText('No financial records yet')).toBeVisible();
   await noOverflow();
   for (const name of ['Money & records', 'Stress test', 'Decisions', 'Family', 'Settings']) {
-    await page.locator('.mobile-nav').getByRole('link', { name }).click();
+    await page.locator('.mobile-nav').getByRole('link', { name, exact: true }).click();
     await page.waitForLoadState('networkidle');
     await noOverflow();
   }

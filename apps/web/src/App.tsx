@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Activity, Gauge, LogOut, Scale, Settings as SettingsIcon, Users, Wallet } from 'lucide-react';
+import { Activity, Brain, FileText, Gauge, LineChart, LogOut, Scale, Search, Settings as SettingsIcon, Users, Wallet } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useSession } from './lib/session';
 import { Loading } from './components/ui';
@@ -11,12 +11,20 @@ import Stress from './pages/Stress';
 import Decisions from './pages/Decisions';
 import FamilyPage from './pages/Family';
 import Settings from './pages/Settings';
+import Invest from './pages/Invest';
+import Research from './pages/Research';
+import Forecast from './pages/Forecast';
+import Memory from './pages/Memory';
 
 const NAV = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
   { to: '/records', label: 'Money & records', icon: Wallet },
   { to: '/stress', label: 'Stress test', icon: Activity },
   { to: '/decisions', label: 'Decisions', icon: Scale },
+  { to: '/invest', label: 'Evaluate investment', icon: Search },
+  { to: '/research', label: 'Company research', icon: FileText },
+  { to: '/forecast', label: 'Price forecast', icon: LineChart },
+  { to: '/memory', label: 'Family memory', icon: Brain },
   { to: '/family', label: 'Family', icon: Users },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
@@ -88,6 +96,10 @@ export default function App() {
         <Route path="/stress" element={<Stress />} />
         <Route path="/decisions" element={<Decisions />} />
         <Route path="/decisions/:id" element={<Decisions />} />
+        <Route path="/invest" element={<Invest />} />
+        <Route path="/research" element={<Research />} />
+        <Route path="/forecast" element={<Forecast />} />
+        <Route path="/memory" element={<Memory />} />
         <Route path="/family" element={<FamilyPage />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/login" element={<Navigate to="/" replace />} />

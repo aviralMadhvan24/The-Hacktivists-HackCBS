@@ -81,6 +81,111 @@ router.post('/analyze', handleUpload, wrap(async (req, res) => {
   res.json({ success: true, analysis: row.analysis });
 }));
 
+// ---- Discovery from company investor-relations pages -----------------------
+const discovery = require('../services/concallDiscovery');
+const { z } = require('zod');
+const { validate } = require('../lib/http');
+
+function fetchError(err) {
+  if (err.code === 'FETCH_BLOCKED') return new HttpError(422, 'FETCH_BLOCKED', err.message);
+  return new HttpError(502, 'FETCH_FAILED', `Could not fetch the page: ${err.message}`);
+}
+
+async function markImported(userId, transcripts) {
+  const urls = transcripts.map((t) => t.url);
+  if (!urls.length) return transcripts;
+  const { rows } = await db.query('SELECT id, source_url FROM concall_analyses WHERE user_id = $1 AND source_url = ANY($2::text[])', [userId, urls]);
+  const done = new Map(rows.map((r) => [r.source_url, r.id]));
+  return transcripts.map((t) => ({ ...t, importedAnalysisId: done.get(t.url) || null }));
+}
+
+router.post('/discover', wrap(async (req, res) => {
+  const { irUrl } = validate(z.object({ irUrl: z.string().url().max(500) }).strict(), req.body);
+  let r;
+  try { r = await discovery.discover(irUrl); } catch (err) { throw fetchError(err); }
+  res.json({ success: true, ...r, transcripts: await markImported(req.user.id, r.transcripts) });
+}));
+
+const importSchema = z.object({
+  pdfUrl: z.string().url().max(800),
+  companyName: z.string().trim().min(1).max(160),
+  ticker: z.string().trim().min(1).max(30).transform((s) => s.toUpperCase()),
+  quarter: z.string().regex(/^Q[1-4]$/),
+  fiscalYear: z.string().regex(/^FY\d{2}$/),
+  holdingInfo: z.string().max(500).optional(),
+}).strict();
+
+// Imports a transcript PDF from a public URL, compares it with the previous
+// saved analysis for the same company, and stores it with its source URL.
+router.post('/import', wrap(async (req, res) => {
+  const input = validate(importSchema, req.body);
+  const dup = await db.query('SELECT id FROM concall_analyses WHERE user_id = $1 AND source_url = $2', [req.user.id, input.pdfUrl]);
+  if (dup.rowCount) return res.json({ success: true, alreadyImported: true, analysisId: dup.rows[0].id });
+  let file;
+  try { file = await discovery.fetchTranscriptPdf(input.pdfUrl); } catch (err) { throw err.code === 'FETCH_BLOCKED' ? fetchError(err) : badRequest(err.message); }
+  const extracted = await extractTextFromPDF(file.buffer).catch((e) => { throw badRequest(e.message); });
+
+  const prior = await db.query(
+    `SELECT quarter, fiscal_year, analysis FROM concall_analyses WHERE user_id = $1 AND ticker = $2
+     AND NOT (quarter = $3 AND fiscal_year = $4) ORDER BY fiscal_year DESC, quarter DESC LIMIT 1`, [req.user.id, input.ticker, input.quarter, input.fiscalYear]);
+  const priorText = prior.rows[0]
+    ? `PREVIOUS QUARTER ANALYSIS SUMMARY (${prior.rows[0].quarter} ${prior.rows[0].fiscal_year}; this is LiquidityOS's earlier analysis, not a transcript):\n${JSON.stringify({ executiveSummary: prior.rows[0].analysis.executiveSummary, growthAndGuidance: prior.rows[0].analysis.growthAndGuidance, financialPerformance: prior.rows[0].analysis.financialPerformance })}`
+    : null;
+
+  const usage = await entitlements.consume(req.user.id, 'concall_analysis');
+  let analysis;
+  try {
+    analysis = await analyzeConcallTranscript({
+      companyName: input.companyName, ticker: input.ticker, quarter: input.quarter, fiscalYear: input.fiscalYear,
+      transcriptText: extracted.text, priorTranscriptText: priorText, transcriptSource: `Company website: ${new URL(file.url).hostname} (${extracted.numPages} pages)`, holdingInfo: input.holdingInfo,
+    });
+  } catch (err) {
+    await usage.release();
+    if (err.code === 'LLM_NOT_CONFIGURED') throw new HttpError(503, 'LLM_NOT_CONFIGURED', err.message);
+    if (String(err.code || '').startsWith('LLM_')) throw new HttpError(502, err.code, err.message);
+    throw err;
+  }
+  analysis.comparedWith = prior.rows[0] ? `${prior.rows[0].quarter} ${prior.rows[0].fiscal_year}` : null;
+  const row = await saveAnalysis(req.user.id, { analysis, sourceUrl: file.url });
+  await audit({ actorId: req.user.id, action: 'concall.import', entityType: 'concall', entityId: row.id, details: { ticker: row.ticker, source: new URL(file.url).hostname }, ip: req.ip });
+  res.json({ success: true, analysis: row.analysis, meta: summary(row) });
+}));
+
+router.get('/sources', wrap(async (req, res) => {
+  const { rows } = await db.query('SELECT * FROM research_sources WHERE user_id = $1 ORDER BY ticker', [req.user.id]);
+  res.json({ success: true, sources: rows.map((r) => ({ id: r.id, ticker: r.ticker, company: r.company, irUrl: r.ir_url, lastChecked: r.last_checked, lastResult: r.last_result })) });
+}));
+
+router.post('/sources', wrap(async (req, res) => {
+  const s = validate(z.object({ ticker: z.string().trim().min(1).max(30).transform((v) => v.toUpperCase()), company: z.string().trim().min(1).max(160), irUrl: z.string().url().max(500) }).strict(), req.body);
+  const { checkUrl } = require('../lib/safeFetch');
+  try { await checkUrl(s.irUrl); } catch (err) { throw fetchError(err); }
+  const { rows } = await db.query(
+    `INSERT INTO research_sources (id, user_id, ticker, company, ir_url) VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (user_id, ticker, ir_url) DO UPDATE SET company = EXCLUDED.company RETURNING *`, [randomUUID(), req.user.id, s.ticker, s.company, s.irUrl]);
+  res.status(201).json({ success: true, source: { id: rows[0].id, ticker: rows[0].ticker, company: rows[0].company, irUrl: rows[0].ir_url } });
+}));
+
+router.post('/sources/:id/check', wrap(async (req, res) => {
+  const { rows } = await db.query('SELECT * FROM research_sources WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!rows[0]) throw notFound('Source not found.');
+  let r;
+  try { r = await discovery.discover(rows[0].ir_url); } catch (err) {
+    await db.query('UPDATE research_sources SET last_checked = now(), last_result = $2 WHERE id = $1', [rows[0].id, JSON.stringify({ error: err.message })]);
+    throw fetchError(err);
+  }
+  const transcripts = await markImported(req.user.id, r.transcripts);
+  const summaryResult = { found: transcripts.length, notImported: transcripts.filter((t) => !t.importedAnalysisId).length };
+  await db.query('UPDATE research_sources SET last_checked = now(), last_result = $2 WHERE id = $1', [rows[0].id, JSON.stringify(summaryResult)]);
+  res.json({ success: true, ...r, transcripts, ticker: rows[0].ticker, company: rows[0].company });
+}));
+
+router.delete('/sources/:id', wrap(async (req, res) => {
+  const r = await db.query('DELETE FROM research_sources WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!r.rowCount) throw notFound('Source not found.');
+  res.json({ success: true });
+}));
+
 router.get('/history', wrap(async (req, res) => {
   const params = [req.user.id];
   let where = 'user_id = $1';

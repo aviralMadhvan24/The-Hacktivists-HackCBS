@@ -48,6 +48,26 @@ router.get('/history/:symbol', wrap(async (req, res) => {
   } catch (err) { throw marketError(err); }
 }));
 
+// GET /api/market/forecast/:symbol?horizon=20&exchange=NSE (metered)
+router.get('/forecast/:symbol', wrap(async (req, res) => {
+  const forecasts = require('../services/forecastService');
+  const entitlements = require('../services/entitlements');
+  const horizon = Number(req.query.horizon || 20);
+  const exchange = req.query.exchange === 'BSE' ? 'BSE' : 'NSE';
+  const usage = await entitlements.consume(req.user.id, 'forecast');
+  try {
+    res.json({ success: true, forecast: await forecasts.forecast(req.params.symbol, { exchange, horizon }) });
+  } catch (err) {
+    await usage.release();
+    throw err;
+  }
+}));
+
+router.get('/forecast-service/health', wrap(async (req, res) => {
+  const forecasts = require('../services/forecastService');
+  res.json({ success: true, service: await forecasts.health() });
+}));
+
 // Refreshes prices for every holding the user can edit in a family.
 router.post('/refresh-holdings', wrap(async (req, res) => {
   const { familyId } = validate(z.object({ familyId: z.string().uuid() }).strict(), req.body);

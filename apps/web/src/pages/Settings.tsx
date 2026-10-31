@@ -135,15 +135,23 @@ const CONSENTS = [
 function Consents() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['consents'], queryFn: () => api.get<{ active: Record<string, boolean> }>('/me/consents') });
-  const set = useMutation({ mutationFn: (b: { scope: string; granted: boolean }) => api.post('/me/consents', b), onSuccess: () => qc.invalidateQueries({ queryKey: ['consents'] }) });
+  // Local state so the checkbox responds within the click; reverts if saving fails.
+  const [local, setLocal] = useState<Record<string, boolean>>({});
+  const active = { ...(q.data?.active || {}), ...local };
+  const set = useMutation({
+    mutationFn: (b: { scope: string; granted: boolean }) => api.post('/me/consents', b),
+    onError: (_e, b) => setLocal((l) => ({ ...l, [b.scope]: !b.granted })),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['consents'] }),
+  });
+  const toggle = (scope: string, granted: boolean) => { setLocal((l) => ({ ...l, [scope]: granted })); set.mutate({ scope, granted }); };
   return (
     <Card title="Privacy & consent" subtitle="You can withdraw consent at any time.">
       {q.isLoading ? <Loading /> : (
         <ul className="list-plain">
           {CONSENTS.map((c) => (
             <li key={c.scope} className="stack-sm">
-              <label className="check"><input type="checkbox" checked={Boolean(q.data?.active[c.scope])} disabled={set.isPending}
-                onChange={(e) => set.mutate({ scope: c.scope, granted: e.target.checked })} /> <strong>{c.title}</strong></label>
+              <label className="check"><input type="checkbox" checked={Boolean(active[c.scope])}
+                onChange={(e) => toggle(c.scope, e.target.checked)} /> <strong>{c.title}</strong></label>
               <span className="small muted">{c.body}</span>
             </li>
           ))}

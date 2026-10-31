@@ -1,0 +1,33 @@
+# Local stack. YugabyteDB Aeon is the production database; the "localdb"
+# profile runs a single-node YugabyteDB for development instead:
+#   docker compose --profile localdb up --build
+services:
+  api:
+    build: .
+    ports: ["3000:3000"]
+    env_file: backend/.env
+    environment:
+      FORECAST_SERVICE_URL: http://forecast:8000
+    depends_on:
+      forecast:
+        condition: service_started
+    restart: unless-stopped
+
+  forecast:
+    build: apps/forecast-service
+    expose: ["8000"]
+    restart: unless-stopped
+
+  yugabyte:
+    profiles: ["localdb"]
+    image: yugabytedb/yugabyte:2026.1.2.0-b137
+    command: ["bin/yugabyted", "start", "--background=false"]
+    ports: ["5433:5433", "15433:15433"]
+    volumes: ["ybdata:/root/var"]
+    healthcheck:
+      test: ["CMD", "bin/ysqlsh", "-h", "yugabyte", "-c", "select 1"]
+      interval: 10s
+      retries: 30
+
+volumes:
+  ybdata:

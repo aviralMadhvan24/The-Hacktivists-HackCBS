@@ -126,3 +126,34 @@ test('LLM Configuration: Throws LLMNotConfiguredError when no keys provided', as
     if (prevAnthropic !== undefined) process.env.ANTHROPIC_API_KEY = prevAnthropic;
   }
 });
+
+test('Discovery: finds transcript PDFs and ignores audio/intimations', () => {
+  const { extractTranscriptLinks } = require('../services/concallDiscovery');
+  const html = `
+    <a href="/ir/Q2FY27-earnings-call-transcript.pdf">Transcript of Q2 FY27 earnings call</a>
+    <a href="https://cdn.example.com/files/HDFCB-Transcript-Oct17-2026.pdf">Download</a>
+    <a href="/ir/audio-recording-q2.mp3">Audio recording</a>
+    <a href="/ir/intimation-of-earnings-call.pdf">Intimation of earnings call</a>
+    <a href="/ir/annual-report.pdf">Annual report</a>`;
+  const links = extractTranscriptLinks(html, 'https://company.example.com/investors/');
+  assert.equal(links.length, 2);
+  assert.equal(links[0].url, 'https://company.example.com/ir/Q2FY27-earnings-call-transcript.pdf');
+  assert.deepEqual([links[0].quarter, links[0].fiscalYear], ['Q2', 'FY27']);
+  assert.deepEqual([links[1].quarter, links[1].fiscalYear, links[1].inferredFromDate], ['Q2', 'FY27', true]);
+});
+
+test('Discovery: period inference handles common formats', () => {
+  const { inferPeriod } = require('../services/concallDiscovery');
+  assert.deepEqual(inferPeriod('Q3 FY 2025-26 Earnings Call'), { quarter: 'Q3', fiscalYear: 'FY26', inferredFromDate: false });
+  assert.equal(inferPeriod('earnings-call-transcript Q1FY25.pdf').fiscalYear, 'FY25');
+  assert.deepEqual(inferPeriod('Transcript 20 May 2026'), { quarter: 'Q4', fiscalYear: 'FY26', inferredFromDate: true });
+});
+
+test('SafeFetch: blocks private, loopback, metadata and non-http targets', async () => {
+  const { checkUrl, isPrivateIp } = require('../lib/safeFetch');
+  for (const ip of ['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '::1', 'fd00::1', '::ffff:127.0.0.1']) assert.ok(isPrivateIp(ip), ip);
+  for (const ip of ['8.8.8.8', '13.234.1.1', '2606:4700::1111']) assert.ok(!isPrivateIp(ip), ip);
+  for (const u of ['http://127.0.0.1/', 'http://169.254.169.254/latest', 'file:///etc/passwd', 'ftp://x.com/a', 'http://user:pw@example.com/', 'http://example.com:8080/']) {
+    await assert.rejects(() => checkUrl(u), { code: 'FETCH_BLOCKED' }, u);
+  }
+});

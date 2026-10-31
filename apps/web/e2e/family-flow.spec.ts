@@ -42,7 +42,7 @@ test.describe.serial('family flow', () => {
     await page.getByRole('button', { name: 'Create family' }).click();
     await expect(page.getByText('No financial records yet')).toBeVisible();
 
-    await page.getByRole('link', { name: 'Family' }).first().click();
+    await page.getByRole('link', { name: 'Family', exact: true }).first().click();
     await page.getByLabel('Email').fill(ravi.email);
     await page.getByRole('button', { name: 'Create invitation' }).click();
     const code = page.locator('code');

@@ -27,6 +27,10 @@ export default defineConfig({
       NODE_ENV: 'test',
       MARKET_DATA_PROVIDER: 'YAHOO',
       WEB_DIST: './dist',
+      // Never call paid AI providers from tests, even if the machine has keys set.
+      GEMINI_API_KEY: '', OPENAI_API_KEY: '', ANTHROPIC_API_KEY: '',
+      MEKO_ENABLED: 'false',
+      FORECAST_SERVICE_URL: process.env.E2E_FORECAST_URL || '',
     },
   },
 });
