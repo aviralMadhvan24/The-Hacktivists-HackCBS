@@ -1,12 +1,6 @@
 const { randomUUID } = require('crypto');
+const { callLLM, LLMNotConfiguredError } = require('../lib/llm');
 
-class LLMNotConfiguredError extends Error {
-  constructor(message = 'No LLM API key configured.') {
-    super(message);
-    this.name = 'LLMNotConfiguredError';
-    this.code = 'LLM_NOT_CONFIGURED';
-  }
-}
 
 /**
  * Validates the metadata and transcript before analysis.
@@ -131,127 +125,6 @@ REQUIRED JSON OUTPUT FORMAT:
 }`;
 }
 
-/**
- * Dispatches prompt to configured LLM provider or throws LLMNotConfiguredError.
- */
-async function callLLM(prompt) {
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-
-  if (geminiKey) {
-    return await callGemini(prompt, geminiKey);
-  } else if (openaiKey) {
-    return await callOpenAI(prompt, openaiKey);
-  } else if (anthropicKey) {
-    return await callAnthropic(prompt, anthropicKey);
-  } else {
-    throw new LLMNotConfiguredError(
-      'No LLM API key configured. Please set GEMINI_API_KEY or OPENAI_API_KEY in backend/.env to perform live concall intelligence analysis.'
-    );
-  }
-}
-
-async function callGemini(prompt, apiKey) {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.1
-      }
-    })
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${errText}`);
-  }
-
-  const data = await response.json();
-  const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawContent) {
-    throw new Error('Gemini returned an empty response.');
-  }
-
-  return JSON.parse(rawContent);
-}
-
-async function callOpenAI(prompt, apiKey) {
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-  const url = 'https://api.openai.com/v1/chat/completions';
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { role: 'system', content: 'You are a financial intelligence assistant that only responds in valid JSON.' },
-        { role: 'user', content: prompt }
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1
-    })
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`OpenAI API error (${response.status}): ${errText}`);
-  }
-
-  const data = await response.json();
-  const rawContent = data.choices?.[0]?.message?.content;
-  if (!rawContent) {
-    throw new Error('OpenAI returned an empty response.');
-  }
-
-  return JSON.parse(rawContent);
-}
-
-async function callAnthropic(prompt, apiKey) {
-  const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022';
-  const url = 'https://api.anthropic.com/v1/messages';
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: model,
-      max_tokens: 4096,
-      messages: [
-        { role: 'user', content: prompt + '\nRespond with JSON only, without any markdown code fences.' }
-      ]
-    })
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Anthropic API error (${response.status}): ${errText}`);
-  }
-
-  const data = await response.json();
-  const rawContent = data.content?.[0]?.text;
-  if (!rawContent) {
-    throw new Error('Anthropic returned an empty response.');
-  }
-
-  // Strip code fences if present
-  const cleaned = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
-  return JSON.parse(cleaned);
-}
 
 /**
  * Validates the parsed analysis object matches the expected schema.
@@ -334,7 +207,7 @@ async function analyzeConcallTranscript({
   });
 
   const rawAnalysis = await callLLM(prompt);
-  const validatedAnalysis = validateAnalysisSchema(rawAnalysis);
+  const validatedAnalysis = verifyQuotes(validateAnalysisSchema(rawAnalysis), transcriptText);
 
   const reportId = `concall-${randomUUID()}`;
   const timestamp = new Date().toISOString();
@@ -355,8 +228,45 @@ async function analyzeConcallTranscript({
   };
 }
 
+// Normalises text for quote matching: case, whitespace, curly quotes and dashes.
+function normaliseForMatch(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
+    .replace(/[^a-z0-9%₹.'"-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Checks every quote the model attributes to the transcript actually appears in it.
+ * Quotes that don't match are kept but flagged, so the UI can separate verified
+ * management statements from unverified AI output.
+ */
+function verifyQuotes(analysis, transcriptText) {
+  const haystack = normaliseForMatch(transcriptText);
+  const check = (q) => {
+    const n = normaliseForMatch(q);
+    return n.length >= 12 && haystack.includes(n);
+  };
+  let total = 0;
+  let verified = 0;
+  for (const f of analysis.findings) {
+    f.quoteVerified = check(f.exactQuote);
+    total++; if (f.quoteVerified) verified++;
+  }
+  for (const m of analysis.managementStatements) {
+    m.quoteVerified = check(m.quote);
+    total++; if (m.quoteVerified) verified++;
+  }
+  analysis.quoteVerification = {
+    total, verified, unverified: total - verified,
+    method: 'Exact match after normalising case, punctuation and whitespace.',
+    note: total - verified > 0 ? 'Some quotes could not be found verbatim in the transcript. Treat them as AI paraphrase, not management statements.' : 'All quotes were found verbatim in the transcript.',
+  };
+  return analysis;
+}
+
 module.exports = {
   analyzeConcallTranscript,
+  verifyQuotes,
   validateInput,
   prepareTranscriptText,
   LLMNotConfiguredError

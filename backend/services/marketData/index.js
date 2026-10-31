@@ -1,3 +1,9 @@
+// Market data service with caching and explicit freshness labels.
+//
+// Providers: Yahoo Finance chart API (default, unofficial, ~15-min delayed for
+// NSE/BSE) or MOCK (demo data, only when MARKET_DATA_PROVIDER=MOCK).
+// When the live provider fails we return the last cached value marked STALE,
+// or an error. We never silently substitute demo prices.
 const MockMarketDataProvider = require('./MockMarketDataProvider');
 const YahooFinanceAdapter = require('./YahooFinanceAdapter');
 
@@ -5,10 +11,10 @@ class MarketDataService {
   constructor() {
     this.mockProvider = new MockMarketDataProvider();
     this.yahooProvider = new YahooFinanceAdapter();
-    
-    // In-memory quote cache: symbol -> { quote, cachedAt }
-    this.cache = new Map();
-    this.cacheTTLMs = 60 * 1000; // 60 seconds TTL to respect upstream rate limits
+    this.cache = new Map(); // symbol -> { quote, cachedAt }
+    this.historyCache = new Map(); // key -> { data, cachedAt }
+    this.cacheTTLMs = 60 * 1000;
+    this.historyTTLMs = 6 * 60 * 60 * 1000;
   }
 
   get providerMode() {
@@ -16,108 +22,80 @@ class MarketDataService {
   }
 
   getActiveProvider() {
-    if (this.providerMode === 'MOCK') {
-      return this.mockProvider;
-    }
-    // Default to Yahoo Finance with fallback to Mock if Yahoo fails or is blocked
-    return this.yahooProvider;
+    return this.providerMode === 'MOCK' ? this.mockProvider : this.yahooProvider;
+  }
+
+  cleanSymbol(symbol) {
+    return (symbol || '').trim().toUpperCase().replace(/\.(NS|BO)$/, '');
   }
 
   async search(query) {
     const q = (query || '').trim();
     if (!q) return [];
-
-    // First try active provider
-    try {
-      const results = await this.getActiveProvider().search(q);
-      if (results && results.length > 0) return results;
-    } catch (err) {
-      console.warn(`Market search failed on ${this.providerMode}:`, err.message);
-    }
-
-    // Fallback to mock directory
-    return await this.mockProvider.search(q);
+    return this.getActiveProvider().search(q);
   }
 
-  async getQuote(symbol, forceRefresh = false) {
-    const cleanSym = (symbol || '').trim().toUpperCase().replace('.NS', '').replace('.BO', '');
-    if (!cleanSym) {
-      throw new Error('Symbol is required.');
-    }
-
+  async getQuote(symbol, forceRefresh = false, exchange = 'NSE') {
+    const cleanSym = this.cleanSymbol(symbol);
+    if (!cleanSym || !/^[A-Z0-9&\-_.]{1,30}$/.test(cleanSym)) throw new Error('A valid symbol is required.');
+    const key = `${exchange}:${cleanSym}`;
     const now = Date.now();
-    const cached = this.cache.get(cleanSym);
+    const cached = this.cache.get(key);
+    if (!forceRefresh && cached && now - cached.cachedAt < this.cacheTTLMs) return { ...cached.quote, isFromCache: true };
 
-    if (!forceRefresh && cached && (now - cached.cachedAt) < this.cacheTTLMs) {
-      return {
-        ...cached.quote,
-        isFromCache: true
-      };
-    }
-
-    // Attempt active provider
     try {
-      const quote = await this.getActiveProvider().getQuote(cleanSym);
-      this.cache.set(cleanSym, { quote, cachedAt: now });
-      return {
-        ...quote,
-        isFromCache: false
-      };
+      const quote = await this.getActiveProvider().getQuote(cleanSym, exchange);
+      quote.source = this.getActiveProvider().name;
+      this.cache.set(key, { quote, cachedAt: now });
+      return { ...quote, isFromCache: false };
     } catch (err) {
-      // If cached stale data exists, return with STALE flag rather than failing
       if (cached) {
-        return {
-          ...cached.quote,
-          freshness: 'STALE',
-          staleWarning: `Failed to refresh live price: ${err.message}. Showing last known cached price.`,
-          isFromCache: true
-        };
+        return { ...cached.quote, freshness: 'STALE', staleWarning: `Could not refresh: ${err.message}. Showing the last fetched price.`, isFromCache: true };
       }
-
-      // If in YAHOO mode and it fails (e.g. rate limit, offline sandbox), fall back to Mock with explicit DEMO_DATA label
-      if (this.providerMode !== 'MOCK') {
-        console.warn(`Provider ${this.providerMode} failed for ${cleanSym}, falling back to Demo provider:`, err.message);
-        const demoQuote = await this.mockProvider.getQuote(cleanSym);
-        demoQuote.demoReason = `Live market provider error (${err.message}). Showing DEMO DATA fallback.`;
-        this.cache.set(cleanSym, { quote: demoQuote, cachedAt: now });
-        return {
-          ...demoQuote,
-          isFromCache: false
-        };
-      }
-
       throw err;
     }
   }
 
   async getQuotes(symbols, forceRefresh = false) {
-    const list = Array.isArray(symbols) ? symbols : [];
     const results = {};
-    for (const sym of list) {
+    for (const sym of Array.isArray(symbols) ? symbols.slice(0, 100) : []) {
       try {
         results[sym] = await this.getQuote(sym, forceRefresh);
       } catch (err) {
-        results[sym] = {
-          symbol: sym,
-          error: err.message,
-          freshness: 'UNAVAILABLE'
-        };
+        results[sym] = { symbol: sym, error: err.message, freshness: 'UNAVAILABLE' };
       }
     }
     return results;
   }
 
+  /** Daily OHLC history. range: 1mo..10y. */
+  async getHistory(symbol, { range = '5y', exchange = 'NSE' } = {}) {
+    const cleanSym = this.cleanSymbol(symbol);
+    const key = `${exchange}:${cleanSym}:${range}`;
+    const cached = this.historyCache.get(key);
+    if (cached && Date.now() - cached.cachedAt < this.historyTTLMs) return cached.data;
+    if (this.providerMode === 'MOCK') throw new Error('Price history is not available in MOCK mode.');
+    const data = await this.yahooProvider.getHistory(cleanSym, { range, exchange });
+    this.historyCache.set(key, { data, cachedAt: Date.now() });
+    return data;
+  }
+
   clearCache() {
     this.cache.clear();
+    this.historyCache.clear();
     return true;
   }
 
   getStatus() {
     return {
-      activeProvider: this.providerMode === 'MOCK' ? this.mockProvider.name : this.yahooProvider.name,
+      activeProvider: this.getActiveProvider().name,
       configuredMode: this.providerMode,
+      isDemoData: this.providerMode === 'MOCK',
       cacheSize: this.cache.size,
-      cacheTTLSeconds: this.cacheTTLMs / 1000
+      cacheTTLSeconds: this.cacheTTLMs / 1000,
+      limitations: this.providerMode === 'MOCK'
+        ? 'Demo prices only. Not real market data.'
+        : 'Yahoo Finance public chart endpoint: unofficial, no SLA, ~15 minute delay for NSE/BSE, may rate-limit. Suitable for development and personal use; use a licensed feed for production.',
     };
   }
 }

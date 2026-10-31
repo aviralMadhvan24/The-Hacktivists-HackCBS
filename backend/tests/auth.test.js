@@ -1,96 +1,85 @@
+// Auth against the real database (embedded PostgreSQL or TEST_DATABASE_URL).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const {
-  registerUser,
-  loginUser,
-  verifyToken,
-  revokeToken,
-  getAllUsers,
-  validateCredentials
-} = require('../services/authService');
+const crypto = require('crypto');
+const { start, stop, call, newUser } = require('./helpers/api');
+const authService = require('../services/authService');
 
-test('Auth Service: Seeds default demo and admin accounts in database', () => {
-  const users = getAllUsers();
-  assert.ok(users.length >= 2);
-  const demo = users.find(u => u.email === 'user@gmail.com');
-  const admin = users.find(u => u.email === 'admin@gmail.com');
-  assert.ok(demo, 'Default demo user should exist in database');
-  assert.ok(admin, 'Default admin user should exist in database');
+test.before(start);
+test.after(stop);
+
+test('validateCredentials: format and length rules', () => {
+  assert.throws(() => authService.validateCredentials('', 'password123'), /Email address is required/);
+  assert.throws(() => authService.validateCredentials('not-an-email', 'password123'), /valid email/);
+  assert.throws(() => authService.validateCredentials('a@b.co', ''), /Password is required/);
+  assert.throws(() => authService.validateCredentials('a@b.co', 'short', true), /at least 8/);
+  assert.equal(authService.validateCredentials(' TEST@GMAIL.COM ', 'whatever1', false), 'test@gmail.com');
 });
 
-test('Auth Service: Validates credentials format accurately', () => {
-  // Invalid emails
-  assert.throws(() => validateCredentials('', 'password123'), /Email address is required/);
-  assert.throws(() => validateCredentials('not-an-email', 'password123'), /Please enter a valid email address/);
-  assert.throws(() => validateCredentials('user@', 'password123'), /Please enter a valid email address/);
-  
-  // Weak passwords
-  assert.throws(() => validateCredentials('test@gmail.com', ''), /Password is required/);
-  assert.throws(() => validateCredentials('test@gmail.com', '12345'), /at least 6 characters long/);
-
-  // Valid credentials
-  const clean = validateCredentials(' TEST@GMAIL.COM ', 'securePass123');
-  assert.equal(clean, 'test@gmail.com');
+test('register → me → logout invalidates the session', async () => {
+  const u = await newUser('auth');
+  const me = await call('GET', '/api/auth/me', { token: u.token });
+  assert.equal(me.status, 200);
+  assert.equal(me.body.user.email, u.email);
+  assert.equal(me.body.user.passwordHash, undefined);
+  await call('POST', '/api/auth/logout', { token: u.token });
+  assert.equal((await call('GET', '/api/auth/me', { token: u.token })).status, 401);
 });
 
-test('Auth Service: Successfully logs in default demo user', () => {
-  const result = loginUser({ email: 'user@gmail.com', password: 'password123' });
-  assert.ok(result.token, 'Should return a session token');
-  assert.equal(result.user.email, 'user@gmail.com');
-  assert.equal(result.user.passwordHash, undefined, 'Must not expose passwordHash');
-  assert.equal(result.user.salt, undefined, 'Must not expose salt');
+test('duplicate email is rejected with 409', async () => {
+  const u = await newUser('dup');
+  const r = await call('POST', '/api/auth/register', { body: { email: u.email.toUpperCase(), password: 'another-pass-1' } });
+  assert.equal(r.status, 409);
 });
 
-test('Auth Service: Rejects login with incorrect password', () => {
-  assert.throws(
-    () => loginUser({ email: 'user@gmail.com', password: 'wrongPassword' }),
-    /Incorrect password/
-  );
+test('login: same error for unknown email and wrong password', async () => {
+  const u = await newUser('login');
+  const wrong = await call('POST', '/api/auth/login', { body: { email: u.email, password: 'wrong-password' } });
+  const unknown = await call('POST', '/api/auth/login', { body: { email: `nobody-${u.email}`, password: 'wrong-password' } });
+  assert.equal(wrong.status, 401);
+  assert.equal(unknown.status, 401);
+  assert.equal(wrong.body.message, unknown.body.message);
+  const ok = await call('POST', '/api/auth/login', { body: { email: u.email, password: 'correct-horse-9' } });
+  assert.equal(ok.status, 200);
+  assert.match(ok.headers.get('set-cookie'), /los_session=.*HttpOnly/i);
 });
 
-test('Auth Service: Rejects login with unregistered email', () => {
-  assert.throws(
-    () => loginUser({ email: 'unknown_ghost_user@gmail.com', password: 'password123' }),
-    /No account found with this email/
-  );
+test('cookie sessions require the CSRF header on writes', async () => {
+  const u = await newUser('csrf');
+  const login = await call('POST', '/api/auth/login', { body: { email: u.email, password: 'correct-horse-9' } });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const noHeader = await call('POST', '/api/families', { headers: { Cookie: cookie }, body: { name: 'X' } });
+  assert.equal(noHeader.status, 403);
+  const withHeader = await call('POST', '/api/families', { headers: { Cookie: cookie, 'X-LOS-CSRF': '1' }, body: { name: 'X' } });
+  assert.equal(withHeader.status, 201);
+  const read = await call('GET', '/api/families', { headers: { Cookie: cookie } });
+  assert.equal(read.status, 200);
 });
 
-test('Auth Service: Successfully registers a new user in database and allows subsequent login', () => {
-  const testEmail = `investor_${Date.now()}@gmail.com`;
-  const registerResult = registerUser({
-    name: 'Rohit Sharma',
-    email: testEmail,
-    password: 'myPortfolio2026'
-  });
-
-  assert.equal(registerResult.user.email, testEmail);
-  assert.equal(registerResult.user.name, 'Rohit Sharma');
-  assert.ok(registerResult.token);
-
-  // Verify session token
-  const verified = verifyToken(registerResult.token);
-  assert.equal(verified.email, testEmail);
-
-  // Now login with the newly created account
-  const loginResult = loginUser({
-    email: testEmail,
-    password: 'myPortfolio2026'
-  });
-  assert.equal(loginResult.user.email, testEmail);
+test('legacy users.json import keeps passwords working and upgrades the hash', async () => {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync('legacy-pass', salt, 10000, 64, 'sha512').toString('hex');
+  const email = `legacy-${crypto.randomUUID().slice(0, 8)}@example.test`;
+  const file = path.join(os.tmpdir(), `users-${Date.now()}.json`);
+  fs.writeFileSync(file, JSON.stringify([{ id: `usr_${Date.now()}`, name: 'Legacy', email, salt, passwordHash: hash, createdAt: new Date().toISOString() }]));
+  const first = await authService.importLegacyUsers(file);
+  const again = await authService.importLegacyUsers(file);
+  fs.unlinkSync(file);
+  assert.equal(first.imported, 1);
+  assert.equal(again.imported, 0);
+  const ok = await call('POST', '/api/auth/login', { body: { email, password: 'legacy-pass' } });
+  assert.equal(ok.status, 200);
+  const db = require('../db/pool');
+  const { rows } = await db.query('SELECT password_iters FROM users WHERE email = $1', [email]);
+  assert.ok(rows[0].password_iters >= 210000);
 });
 
-test('Auth Service: Rejects registration with duplicate email', () => {
-  assert.throws(
-    () => registerUser({ email: 'user@gmail.com', password: 'anotherPassword123' }),
-    /already exists/
-  );
-});
-
-test('Auth Service: Session token revocation works on logout', () => {
-  const result = loginUser({ email: 'user@gmail.com', password: 'password123' });
-  assert.ok(verifyToken(result.token));
-  revokeToken(result.token);
-  assert.equal(verifyToken(result.token), null);
+test('protected routes reject anonymous requests', async () => {
+  for (const p of ['/api/families', '/api/me', '/api/market/status', '/api/concall/history']) {
+    assert.equal((await call('GET', p)).status, 401, p);
+  }
+  assert.equal((await call('GET', '/api/auth/users')).status, 404); // public user list removed
 });

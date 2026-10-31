@@ -1,3 +1,5 @@
+// Service tests run against the explicit demo provider (no network).
+process.env.MARKET_DATA_PROVIDER = 'MOCK';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const marketDataService = require('../services/marketData');

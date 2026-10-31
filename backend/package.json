@@ -1,12 +1,17 @@
 {
-  "name": "finsight-backend",
+  "name": "liquidityos-backend",
   "version": "1.0.0",
   "description": "Backend API for FinSight AI Concall & Financial Resilience Intelligence",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test --test-global-setup=tests/helpers/globalSetup.js --test-concurrency=4 tests/*.test.js",
+    "test:unit": "node --test tests/engine.test.js tests/market.test.js tests/concall.test.js",
+    "db:migrate": "node db/migrate.js",
+    "db:import-legacy": "node scripts/import-legacy-users.js",
+    "dev:db": "node scripts/dev-db.js start",
+    "dev:db:stop": "node scripts/dev-db.js stop"
   },
   "dependencies": {
     "cookie-parser": "1.4.7",
@@ -21,7 +26,7 @@
     "zod": "3.25.76"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "devDependencies": {
     "embedded-postgres": "15.18.0-beta.17"

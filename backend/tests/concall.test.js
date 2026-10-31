@@ -2,7 +2,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { validateInput, prepareTranscriptText, LLMNotConfiguredError } = require('../services/concallAnalyzer');
 const { extractTextFromPDF } = require('../services/pdfExtractor');
-const storage = require('../services/storage');
 
 test('Validation: Rejects missing company name', () => {
   assert.throws(
@@ -81,40 +80,17 @@ test('PDF Extractor: Rejects empty or invalid non-PDF buffers', async () => {
   );
 });
 
-test('Storage: Saves and retrieves analysis correctly', () => {
-  const testId = `test-analysis-${Date.now()}`;
-  const mockReport = {
-    id: testId,
-    createdAt: new Date().toISOString(),
-    metadata: {
-      companyName: 'Test Corp',
-      ticker: 'TEST',
-      quarter: 'Q1',
-      fiscalYear: 'FY26'
-    },
-    executiveSummary: 'Test summary.',
-    findings: [
-      {
-        id: 'f-1',
-        topic: 'Margin Expansion',
-        classification: 'positiveDevelopment',
-        explanation: 'Margins improved by 40 bps.',
-        exactQuote: 'Our EBITDA margin expanded by 40 bps.',
-        location: 'Page 3'
-      }
-    ]
-  };
-
-  storage.saveAnalysis(mockReport);
-  const retrieved = storage.getAnalysisById(testId);
-  assert.ok(retrieved);
-  assert.equal(retrieved.metadata.companyName, 'Test Corp');
-  assert.equal(retrieved.findings.length, 1);
-
-  // Clean up
-  storage.deleteAnalysis(testId);
-  const afterDelete = storage.getAnalysisById(testId);
-  assert.equal(afterDelete, null);
+test('Quote verification: flags quotes not found in the transcript', () => {
+  const { verifyQuotes } = require('../services/concallAnalyzer');
+  const transcript = 'Moderator: Welcome. CFO: Our EBITDA margin expanded by 40 bps this quarter, driven by “pricing discipline”.';
+  const out = verifyQuotes({ findings: [
+    { exactQuote: 'our ebitda margin expanded   by 40 bps this quarter' },
+    { exactQuote: 'Revenue grew 25% year on year across all segments' },
+  ], managementStatements: [{ quote: 'driven by "pricing discipline"' }] }, transcript);
+  assert.equal(out.findings[0].quoteVerified, true);
+  assert.equal(out.findings[1].quoteVerified, false);
+  assert.equal(out.managementStatements[0].quoteVerified, true);
+  assert.equal(out.quoteVerification.unverified, 1);
 });
 
 test('LLM Configuration: Throws LLMNotConfiguredError when no keys provided', async () => {
@@ -145,8 +121,8 @@ test('LLM Configuration: Throws LLMNotConfiguredError when no keys provided', as
       }
     );
   } finally {
-    process.env.GEMINI_API_KEY = prevGemini;
-    process.env.OPENAI_API_KEY = prevOpenAI;
-    process.env.ANTHROPIC_API_KEY = prevAnthropic;
+    if (prevGemini !== undefined) process.env.GEMINI_API_KEY = prevGemini;
+    if (prevOpenAI !== undefined) process.env.OPENAI_API_KEY = prevOpenAI;
+    if (prevAnthropic !== undefined) process.env.ANTHROPIC_API_KEY = prevAnthropic;
   }
 });

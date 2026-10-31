@@ -1,51 +1,52 @@
+// POST /api/recovery/plan — recovery plans from the family's real records,
+// optionally after a stress scenario. The numbers are deterministic; an LLM (if
+// configured) only adds a short narrative and may not change any figure.
 const express = require('express');
-const { calculateDeterministicPlans, generateRecoveryNarrative } = require('../services/recoveryService');
+const { z } = require('zod');
+const { wrap, validate } = require('../lib/http');
+const analytics = require('../services/analyticsService');
+const { recoveryPlans } = require('../engine/recovery');
+const stress = require('../engine/stress');
+const llm = require('../lib/llm');
 
 const router = express.Router();
 
-/**
- * POST /api/recovery/plan
- * Generates deterministic financial recovery options enhanced with AI explanations.
- */
-router.post('/plan', async (req, res) => {
-  try {
-    const {
-      currentCash = 0,
-      monthlyIncome = 0,
-      monthlyExpenses = 0,
-      monthlyDebtPayments = 0,
-      emergencyExpense = 0,
-      incomeLossDurationMonths = 0,
-      portfolioValue = 0,
-      simulatedPortfolioLoss = 0,
-      userGoals = ''
-    } = req.body;
+const schema = z.object({
+  familyId: z.string().uuid(),
+  scope: z.enum(['family', 'individual']).default('family'),
+  userId: z.string().uuid().optional(),
+  shocks: z.array(z.object({ type: z.enum(stress.SHOCK_TYPES) }).passthrough()).max(20).default([]),
+  targetMonths: z.number().min(1).max(24).default(6),
+  withNarrative: z.boolean().default(false),
+}).strict();
 
-    const deterministic = calculateDeterministicPlans({
-      currentCash: Number(currentCash),
-      monthlyIncome: Number(monthlyIncome),
-      monthlyExpenses: Number(monthlyExpenses),
-      monthlyDebtPayments: Number(monthlyDebtPayments),
-      emergencyExpense: Number(emergencyExpense),
-      incomeLossDurationMonths: Number(incomeLossDurationMonths),
-      portfolioValue: Number(portfolioValue),
-      simulatedPortfolioLoss: Number(simulatedPortfolioLoss)
-    });
-
-    const narrative = await generateRecoveryNarrative(deterministic, userGoals);
-
-    return res.status(200).json({
-      success: true,
-      baseline: deterministic.baseline,
-      recovery: narrative
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: 'RECOVERY_PLAN_ERROR',
-      message: err.message
-    });
+router.post('/plan', wrap(async (req, res) => {
+  const input = validate(schema, req.body);
+  const { position } = await analytics.positionFor(input.familyId, req.user.id, input);
+  let cashAfterShock;
+  let scenario = null;
+  if (input.shocks.length) {
+    const r = stress.runScenario(position, input.shocks);
+    const end = r.projection.reduce((min, p) => (p.cash < min.cash ? p : min), r.projection[0]);
+    cashAfterShock = end.cash;
+    scenario = { lowestCash: end.cash, lowestCashMonth: end.month, verdict: r.verdict };
   }
-});
+  const result = recoveryPlans(position, { cashAfterShock, targetMonths: input.targetMonths });
+
+  let narrative = { aiGenerated: false, text: null };
+  if (input.withNarrative && llm.isConfigured()) {
+    try {
+      const { json, provider } = await llm.generateJson(
+        `Recovery plan figures (INR, monthly):\n${JSON.stringify({ baseline: result.baseline, plans: result.plans.map(({ actionSteps, ...p }) => p) })}\n\n` +
+        'Write {"summary": "2-3 plain sentences comparing the trade-offs", "recommendedTier": "Conservative|Balanced|Aggressive", "reason": "one sentence"}. ' +
+        'Use only the figures given. Do not invent numbers, promise returns, or recommend specific securities.',
+        { system: 'You explain household cash-flow recovery plans to Indian families. Output JSON only.' });
+      narrative = { aiGenerated: true, provider, text: json.summary, recommendedTier: json.recommendedTier, reason: json.reason };
+    } catch (err) {
+      narrative = { aiGenerated: false, text: null, error: `AI narrative unavailable: ${err.message}` };
+    }
+  }
+  res.json({ success: true, scenario, ...result, narrative });
+}));
 
 module.exports = router;

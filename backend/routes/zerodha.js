@@ -1,155 +1,31 @@
 const express = require('express');
-const zerodhaService = require('../services/zerodhaService');
+const zerodha = require('../services/zerodhaService');
+const { requireAuth } = require('../middleware/auth');
+const { wrap } = require('../lib/http');
 
 const router = express.Router();
+const webUrl = (query) => `${(process.env.WEB_APP_URL || '').replace(/\/$/, '')}/settings?${query}`;
 
-/**
- * GET /api/zerodha/status
- * Returns connection status and configuration state.
- */
-router.get('/status', (req, res) => {
-  const isConfigured = zerodhaService.isConfigured();
-  const isConnected = zerodhaService.isConnected();
-  const user = zerodhaService.getUser();
+router.get('/status', requireAuth, wrap(async (req, res) => res.json({ success: true, ...(await zerodha.status(req.user.id)) })));
 
-  res.status(200).json({
-    success: true,
-    isConfigured,
-    isConnected,
-    user,
-    setupGuide: !isConfigured ? {
-      info: 'To connect a real Zerodha account, create an app at https://developers.kite.trade/ and set ZERODHA_API_KEY and ZERODHA_API_SECRET in backend/.env.',
-      redirectUrl: 'http://localhost:3000/api/zerodha/callback'
-    } : null
-  });
-});
+router.get('/login-url', requireAuth, wrap(async (req, res) => res.json({ success: true, loginUrl: await zerodha.createLoginUrl(req.user.id) })));
 
-/**
- * GET /api/zerodha/login-url
- * Returns the Kite Connect OAuth login URL.
- */
-router.get('/login-url', (req, res) => {
-  if (!zerodhaService.isConfigured()) {
-    return res.status(400).json({
-      success: false,
-      error: 'ZERODHA_NOT_CONFIGURED',
-      message: 'ZERODHA_API_KEY and ZERODHA_API_SECRET are not set in backend/.env. Use /api/zerodha/demo-connect for instant sandbox testing or add your Kite credentials.'
-    });
-  }
-
-  const loginUrl = zerodhaService.getLoginURL();
-  res.status(200).json({
-    success: true,
-    loginUrl
-  });
-});
-
-/**
- * GET /api/zerodha/callback
- * Zerodha Kite redirects back here after user signs in.
- */
+// Public: Kite redirects the browser here. The one-time state identifies the user.
+// Redirects back to the web app; no user-controlled text is rendered.
 router.get('/callback', async (req, res) => {
-  const { request_token, status, action } = req.query;
-
-  if (status !== 'success' || !request_token) {
-    return res.status(400).send(`
-      <html>
-        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: center; padding: 50px;">
-          <h2 style="color: #e53935;">Zerodha Authentication Failed</h2>
-          <p>Request token was missing or status was unsuccessful.</p>
-          <a href="finsight://zerodha-failed" style="display: inline-block; padding: 12px 24px; background: #2196f3; color: white; text-decoration: none; border-radius: 8px;">Return to FinSight</a>
-        </body>
-      </html>
-    `);
-  }
-
   try {
-    const user = await zerodhaService.exchangeToken(request_token);
-
-    return res.status(200).send(`
-      <html>
-        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: center; padding: 50px; background-color: #f8fafc;">
-          <div style="max-width: 480px; margin: 0 auto; background: white; padding: 36px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
-            <div style="font-size: 48px; margin-bottom: 12px;">✅</div>
-            <h2 style="color: #0f172a; margin-bottom: 8px;">Zerodha Kite Connected!</h2>
-            <p style="color: #64748b; margin-bottom: 24px;">Authenticated as <strong>${user.userName} (${user.userId})</strong>.</p>
-            <p style="color: #334155; font-size: 14px;">Your portfolio holdings are now ready to sync with FinSight.</p>
-            <div style="margin-top: 30px;">
-              <a href="finsight://zerodha-success" style="display: inline-block; padding: 12px 28px; background: #ff5722; color: white; text-decoration: none; border-radius: 10px; font-weight: bold;">Return to App</a>
-            </div>
-          </div>
-        </body>
-      </html>
-    `);
+    await zerodha.handleCallback({ requestToken: req.query.request_token, state: req.query.state, status: req.query.status });
+    res.redirect(302, webUrl('zerodha=connected'));
   } catch (err) {
-    return res.status(500).send(`
-      <html>
-        <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 50px;">
-          <h2 style="color: #e53935;">Token Exchange Error</h2>
-          <p>${err.message}</p>
-        </body>
-      </html>
-    `);
+    const code = encodeURIComponent(err.code || 'ZERODHA_ERROR');
+    res.redirect(302, webUrl(`zerodha=error&code=${code}`));
   }
 });
 
-/**
- * POST /api/zerodha/exchange-token
- * Programmatic token exchange.
- */
-router.post('/exchange-token', async (req, res) => {
-  const { requestToken } = req.body;
-  try {
-    const user = await zerodhaService.exchangeToken(requestToken);
-    res.status(200).json({ success: true, user });
-  } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
+router.get('/portfolio', requireAuth, wrap(async (req, res) => res.json({ success: true, ...(await zerodha.fetchPortfolio(req.user.id)) })));
 
-/**
- * POST /api/zerodha/demo-connect
- * Instantly connects a mock Zerodha sandbox session.
- */
-router.post('/demo-connect', (req, res) => {
-  const user = zerodhaService.connectDemoAccount();
-  res.status(200).json({
-    success: true,
-    message: 'Connected to Zerodha Kite Demo Sandbox.',
-    user
-  });
-});
+router.post('/sync', requireAuth, wrap(async (req, res) => res.json({ success: true, ...(await zerodha.syncToFamily(req.user.id, req.body || {}, req.ip)) })));
 
-/**
- * GET /api/zerodha/portfolio
- * Fetches holdings and available margins from active Zerodha session.
- */
-router.get('/portfolio', async (req, res) => {
-  try {
-    const portfolio = await zerodhaService.getPortfolio();
-    res.status(200).json({
-      success: true,
-      ...portfolio
-    });
-  } catch (err) {
-    res.status(400).json({
-      success: false,
-      error: 'NO_SESSION',
-      message: err.message
-    });
-  }
-});
-
-/**
- * POST /api/zerodha/disconnect
- * Logs out and clears the Zerodha session.
- */
-router.post('/disconnect', (req, res) => {
-  zerodhaService.disconnect();
-  res.status(200).json({
-    success: true,
-    message: 'Zerodha Kite disconnected.'
-  });
-});
+router.post('/disconnect', requireAuth, wrap(async (req, res) => { await zerodha.disconnect(req.user.id, req.ip); res.json({ success: true }); }));
 
 module.exports = router;

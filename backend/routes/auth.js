@@ -1,109 +1,58 @@
 const express = require('express');
-const router = express.Router();
 const authService = require('../services/authService');
+const { requireAuth, readToken, sessionCookieOptions, clientMeta, COOKIE_NAME } = require('../middleware/auth');
+const { wrap, HttpError } = require('../lib/http');
 
-// POST /api/auth/register - Create a new user account in database
-router.post('/register', (req, res) => {
+const router = express.Router();
+
+function toHttp(err) {
+  if (err.code === 'EMAIL_EXISTS') return new HttpError(409, err.code, err.message);
+  if (err.code === 'INVALID_CREDENTIALS') return new HttpError(401, err.code, err.message);
+  if (err.code === 'VALIDATION') return new HttpError(400, 'VALIDATION_ERROR', err.message);
+  return err;
+}
+
+// POST /api/auth/register
+router.post('/register', wrap(async (req, res) => {
   try {
-    const { email, password, name } = req.body;
-    const result = authService.registerUser({ email, password, name });
-    res.status(201).json({
-      success: true,
-      message: 'Account successfully registered.',
-      user: result.user,
-      token: result.token
-    });
-  } catch (err) {
-    const status = err.code === 'EMAIL_EXISTS' ? 409 : 400;
-    res.status(status).json({
-      success: false,
-      error: err.code || 'REGISTRATION_FAILED',
-      message: err.message
-    });
-  }
-});
+    const { email, password, name } = req.body || {};
+    const result = await authService.registerUser({ email, password, name }, clientMeta(req));
+    res.cookie(COOKIE_NAME, result.token, sessionCookieOptions(result.expiresAt));
+    // token is also returned for non-browser clients; the web app relies on the cookie.
+    res.status(201).json({ success: true, user: result.user, token: result.token, expiresAt: result.expiresAt });
+  } catch (err) { throw toHttp(err); }
+}));
 
-// POST /api/auth/login - Authenticate existing user with database credentials
-router.post('/login', (req, res) => {
+// POST /api/auth/login
+router.post('/login', wrap(async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const result = authService.loginUser({ email, password });
-    res.status(200).json({
-      success: true,
-      message: 'Login successful.',
-      user: result.user,
-      token: result.token
-    });
-  } catch (err) {
-    const status = (err.code === 'USER_NOT_FOUND' || err.code === 'INVALID_PASSWORD') ? 401 : 400;
-    res.status(status).json({
-      success: false,
-      error: err.code || 'LOGIN_FAILED',
-      message: err.message
-    });
-  }
+    const { email, password } = req.body || {};
+    const result = await authService.loginUser({ email, password }, clientMeta(req));
+    res.cookie(COOKIE_NAME, result.token, sessionCookieOptions(result.expiresAt));
+    res.json({ success: true, user: result.user, token: result.token, expiresAt: result.expiresAt });
+  } catch (err) { throw toHttp(err); }
+}));
+
+// GET /api/auth/me
+router.get('/me', requireAuth, (req, res) => {
+  res.json({ success: true, user: req.user });
 });
 
-// GET /api/auth/me - Verify current session token
-router.get('/me', (req, res) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7)
-    : req.query.token;
+// POST /api/auth/logout — idempotent; no CSRF header needed since it only ends a session.
+router.post('/logout', wrap(async (req, res) => {
+  const { token } = readToken(req);
+  if (token) await authService.revokeToken(token);
+  res.clearCookie(COOKIE_NAME, { path: '/' });
+  res.json({ success: true });
+}));
 
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      error: 'UNAUTHORIZED',
-      message: 'No authorization token provided.'
-    });
-  }
-
-  const user = authService.verifyToken(token);
-  if (!user) {
-    return res.status(401).json({
-      success: false,
-      error: 'SESSION_EXPIRED',
-      message: 'Session token is invalid or has expired.'
-    });
-  }
-
-  res.status(200).json({
-    success: true,
-    user
-  });
-});
-
-// POST /api/auth/logout - End active session
-router.post('/logout', (req, res) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7)
-    : req.body.token;
-
-  if (token) {
-    authService.revokeToken(token);
-  }
-
-  res.status(200).json({
-    success: true,
-    message: 'Logged out successfully.'
-  });
-});
-
-// GET /api/auth/users - Public sanitized list of registered user emails for quick testing
-router.get('/users', (req, res) => {
-  const users = authService.getAllUsers().map(u => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    createdAt: u.createdAt
-  }));
-  res.status(200).json({
-    success: true,
-    count: users.length,
-    users
-  });
-});
+// POST /api/auth/password — change password and sign out everywhere.
+router.post('/password', requireAuth, wrap(async (req, res) => {
+  try {
+    await authService.changePassword(req.user.id, req.body?.currentPassword, req.body?.newPassword);
+    res.clearCookie(COOKIE_NAME, { path: '/' });
+    res.json({ success: true, message: 'Password changed. Please sign in again.' });
+  } catch (err) { throw toHttp(err); }
+}));
 
 module.exports = router;

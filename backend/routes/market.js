@@ -1,105 +1,72 @@
 const express = require('express');
-const marketDataService = require('../services/marketData');
+const { z } = require('zod');
+const market = require('../services/marketData');
+const families = require('../services/familyService');
+const records = require('../services/recordsService');
+const db = require('../db/pool');
+const { wrap, validate, HttpError } = require('../lib/http');
+const { audit } = require('../lib/audit');
 
 const router = express.Router();
 
-/**
- * GET /api/market/search?q=...
- */
-router.get('/search', async (req, res) => {
-  const query = req.query.q || req.query.query || '';
-  if (!query || query.trim().length === 0) {
-    return res.status(200).json({ success: true, count: 0, results: [] });
-  }
+function marketError(err) {
+  if (err instanceof HttpError) return err;
+  const msg = err.message || '';
+  if (msg.includes('RATE_LIMIT')) return new HttpError(429, 'MARKET_DATA_RATE_LIMIT', msg);
+  if (msg.includes('not found') || msg.includes('No price history')) return new HttpError(404, 'SYMBOL_NOT_FOUND', msg);
+  if (msg.includes('valid symbol') || msg.includes('Unsupported range')) return new HttpError(400, 'VALIDATION_ERROR', msg);
+  return new HttpError(502, 'MARKET_DATA_UNAVAILABLE', `Market data is unavailable right now: ${msg}`);
+}
 
+router.get('/status', (req, res) => res.json({ success: true, status: market.getStatus() }));
+
+router.get('/search', wrap(async (req, res) => {
+  const q = String(req.query.q || '').slice(0, 60);
+  if (!q.trim()) return res.json({ success: true, count: 0, results: [] });
   try {
-    const results = await marketDataService.search(query);
-    return res.status(200).json({
-      success: true,
-      count: results.length,
-      results
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: 'SEARCH_ERROR',
-      message: err.message
-    });
-  }
-});
+    const results = await market.search(q);
+    res.json({ success: true, count: results.length, results });
+  } catch (err) { throw marketError(err); }
+}));
 
-/**
- * GET /api/market/quote/:symbol
- */
-router.get('/quote/:symbol', async (req, res) => {
-  const symbol = req.params.symbol;
-  const force = req.query.force === 'true';
-
+router.get('/quote/:symbol', wrap(async (req, res) => {
   try {
-    const quote = await marketDataService.getQuote(symbol, force);
-    return res.status(200).json({
-      success: true,
-      quote
-    });
-  } catch (err) {
-    const status = err.message && err.message.includes('RATE_LIMIT') ? 429 : 500;
-    return res.status(status).json({
-      success: false,
-      error: 'QUOTE_ERROR',
-      message: err.message
-    });
-  }
-});
+    const exchange = req.query.exchange === 'BSE' ? 'BSE' : 'NSE';
+    res.json({ success: true, quote: await market.getQuote(req.params.symbol, req.query.force === 'true', exchange) });
+  } catch (err) { throw marketError(err); }
+}));
 
-/**
- * POST /api/market/quotes
- * Batch quote endpoint for entire portfolio.
- */
-router.post('/quotes', async (req, res) => {
-  const { symbols, forceRefresh } = req.body;
-  if (!symbols || !Array.isArray(symbols)) {
-    return res.status(400).json({
-      success: false,
-      error: 'VALIDATION_ERROR',
-      message: 'Body parameter "symbols" must be an array of strings.'
-    });
-  }
+router.post('/quotes', wrap(async (req, res) => {
+  const { symbols, forceRefresh } = validate(z.object({ symbols: z.array(z.string().max(30)).min(1).max(100), forceRefresh: z.boolean().optional() }), req.body);
+  res.json({ success: true, quotes: await market.getQuotes(symbols, Boolean(forceRefresh)) });
+}));
 
+router.get('/history/:symbol', wrap(async (req, res) => {
   try {
-    const quotes = await marketDataService.getQuotes(symbols, Boolean(forceRefresh));
-    return res.status(200).json({
-      success: true,
-      quotes
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: 'BATCH_QUOTES_ERROR',
-      message: err.message
-    });
+    const exchange = req.query.exchange === 'BSE' ? 'BSE' : 'NSE';
+    res.json({ success: true, history: await market.getHistory(req.params.symbol, { range: String(req.query.range || '1y'), exchange }) });
+  } catch (err) { throw marketError(err); }
+}));
+
+// Refreshes prices for every holding the user can edit in a family.
+router.post('/refresh-holdings', wrap(async (req, res) => {
+  const { familyId } = validate(z.object({ familyId: z.string().uuid() }).strict(), req.body);
+  await families.requireRole(familyId, req.user.id, 'member');
+  const accounts = (await records.listVisible('accounts', familyId, req.user.id)).filter((a) => a.valueSource !== 'manual');
+  const ids = accounts.map((a) => a.id);
+  if (!ids.length) return res.json({ success: true, updated: 0, failed: [] });
+  const { rows } = await db.query(
+    "SELECT id, symbol, exchange FROM holdings WHERE account_id = ANY($1::uuid[]) AND instrument IN ('equity','etf')", [ids]);
+  const quotes = {};
+  const failed = [];
+  for (const h of rows) {
+    const key = `${h.exchange}:${h.symbol}`;
+    if (quotes[key]) continue;
+    try { quotes[key] = await market.getQuote(h.symbol, false, h.exchange); } catch (err) { failed.push({ symbol: h.symbol, error: err.message }); }
   }
-});
-
-/**
- * POST /api/market/refresh
- * Clears cached quotes and returns status.
- */
-router.post('/refresh', (req, res) => {
-  marketDataService.clearCache();
-  return res.status(200).json({
-    success: true,
-    message: 'Market data quote cache flushed.'
-  });
-});
-
-/**
- * GET /api/market/status
- */
-router.get('/status', (req, res) => {
-  return res.status(200).json({
-    success: true,
-    status: marketDataService.getStatus()
-  });
-});
+  const updated = await records.applyPrices(rows.map((h) => ({ id: h.id, symbol: `${h.exchange}:${h.symbol}` })), quotes);
+  await audit({ familyId, actorId: req.user.id, action: 'holdings.price_refresh', details: { updated, failed: failed.length }, ip: req.ip });
+  res.json({ success: true, updated, failed, source: market.getStatus().activeProvider });
+}));
 
 module.exports = router;

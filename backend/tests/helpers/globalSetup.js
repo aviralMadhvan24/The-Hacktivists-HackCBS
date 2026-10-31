@@ -61,7 +61,8 @@ async function globalSetup() {
     const { Client } = require('pg');
     const admin = new Client({ host: '127.0.0.1', port, user: 'los', password, database: 'postgres' });
     await admin.connect();
-    await admin.query('CREATE DATABASE liquidityos_test');
+    // UTF8 like YugabyteDB; a Windows host would otherwise default to WIN1252.
+    await admin.query("CREATE DATABASE liquidityos_test ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C'");
     await admin.end();
     process.env.DATABASE_URL = `postgres://los:${password}@127.0.0.1:${port}/liquidityos_test`;
   }
