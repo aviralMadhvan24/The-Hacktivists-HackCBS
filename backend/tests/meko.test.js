@@ -124,3 +124,8 @@ test('account deletion removes the private datapack', async () => {
   assert.equal(del.body.meko.datapackDeleted, true);
   assert.equal(fake.state.datapacks.size, before - 1);
 });
+
+test('context sources reject javascript: and other non-http links', async () => {
+  const r = await ctx(asha, 'POST', '', { kind: 'note', title: 'XSS attempt', body: 'This should not be stored with a script link.', sources: [{ label: 'x', url: 'javascript:alert(1)' }] });
+  assert.equal(r.status, 400);
+});

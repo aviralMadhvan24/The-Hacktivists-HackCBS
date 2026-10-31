@@ -73,3 +73,8 @@ apps/web  (React + TypeScript SPA)  ──HTTP──▶  backend/ (Express, exte
 
 ## 6. Progress log
 - 2026-10-31 — Phase A complete. Existing tests 24/24 pass.
+- 2026-10-31 — Phase B: schema + migrations, DB auth, families/roles/invites, records with ownership and visibility, audit log, per-user Zerodha. Removed RUNNING.md and MONOREPO_OVERVIEW.md (described services that never existed) and the broken apps/api + empty Next.js scaffolds.
+- 2026-10-31 — Phase C: consolidation, five-pillar score, stress/reverse/what-if/recovery engines, dashboards and web app.
+- 2026-10-31 — Phase D: Meko context layer (MCP), investment agent.
+- 2026-10-31 — Phase E: Chronos-Bolt forecasting (verified + backtested), concall discovery, entitlements.
+- 2026-10-31 — Phase F: security review fixes (XSS link schemes, SSRF), docs. 76 backend + 11 browser tests passing. See docs/STATUS.md.

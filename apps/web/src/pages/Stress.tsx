@@ -161,7 +161,39 @@ function RunScenario() {
         </div>
       </Card>
       {run.data && <StressResultView r={run.data} memberName={memberName} />}
+      {run.data && <RecoveryPlans shocks={run.data.shocks} />}
     </div>
+  );
+}
+
+/** Recovery options after the scenario, from the family's own discretionary spending. */
+function RecoveryPlans({ shocks }: { shocks: Shock[] }) {
+  const { familyId, scope } = useSession();
+  const q = useQuery({
+    queryKey: ['recovery', familyId, scope, JSON.stringify(shocks)],
+    queryFn: () => api.post<any>('/recovery/plan', { familyId, ...scope, shocks }),
+  });
+  if (q.isLoading) return <Loading label="Building recovery plans…" />;
+  if (q.error) return <Notice tone="bad">{errorMessage(q.error)}</Notice>;
+  const r = q.data;
+  return (
+    <Card title="Recovery plans" subtitle={`Rebuilding a ${r.baseline.targetMonths}-month emergency fund (${inr(r.baseline.emergencyTarget)}) from the scenario's lowest cash point${r.scenario ? ` (${inr(r.scenario.lowestCash)} in month ${r.scenario.lowestCashMonth})` : ''}`}>
+      {r.notes.map((n: string) => <Notice key={n} tone="warn">{n}</Notice>)}
+      <div className="grid grid-3" style={{ marginTop: 8 }}>
+        {r.plans.map((p: any) => (
+          <div key={p.id} className="card" style={{ padding: 16 }}>
+            <div className="row-between"><strong>{p.tier}</strong><Badge>{p.cutPct}% cut</Badge></div>
+            <p className="small muted" style={{ margin: '4px 0 10px' }}>{p.title}</p>
+            <dl className="kv">
+              <dt>Saves</dt><dd>{inr(p.monthlyExpenseReduction)}/mo</dd>
+              <dt>Monthly surplus</dt><dd style={{ color: p.newMonthlySurplus >= 0 ? 'var(--good)' : 'var(--bad)' }}>{inr(p.newMonthlySurplus)}</dd>
+              <dt>Fund rebuilt in</dt><dd>{p.monthsToRebuildEmergencyFund === null ? 'Not with this plan' : p.monthsToRebuildEmergencyFund === 0 ? 'Already there' : `${p.monthsToRebuildEmergencyFund} mo`}</dd>
+            </dl>
+            <ul className="small" style={{ paddingLeft: 18, marginBottom: 0 }}>{p.actionSteps.map((s: string) => <li key={s}>{s}</li>)}</ul>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 

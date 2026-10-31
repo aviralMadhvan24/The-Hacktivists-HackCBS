@@ -205,3 +205,17 @@ test('Scenario comparison runs every preset', () => {
   assert.strictEqual(rows.length, PRESETS.length);
   for (const row of rows) assert.ok(Number.isFinite(row.scoreAfter));
 });
+
+test('Recovery plans use the recorded discretionary spending', () => {
+  const { recoveryPlans } = require('../engine/recovery');
+  const r = recoveryPlans(fam, { cashAfterShock: 100000 });
+  // essential outflows 87,000 × 6 = 5,22,000 target; gap 4,22,000
+  assert.strictEqual(r.baseline.emergencyTarget, 522000);
+  assert.strictEqual(r.baseline.emergencyGap, 422000);
+  const bal = r.plans.find((p) => p.id === 'balanced');
+  assert.strictEqual(bal.monthlyExpenseReduction, 6000);       // 30% of ₹20,000 discretionary
+  assert.strictEqual(bal.newMonthlySurplus, 79000);            // 73,000 + 6,000
+  assert.strictEqual(bal.monthsToRebuildEmergencyFund, 6);     // ceil(4,22,000 / 79,000)
+  const none = recoveryPlans({ ...fam, cashflow: { ...fam.cashflow, discretionaryExpenses: 0 } });
+  assert.ok(none.notes[0].includes('No discretionary expenses'));
+});

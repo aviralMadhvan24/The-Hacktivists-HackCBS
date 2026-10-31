@@ -85,7 +85,7 @@ function AnalysisDetail({ id, onBack }: { id: string; onBack: () => void }) {
         </span>
       </div>
       {remember.error && <Notice tone="bad">{errorMessage(remember.error)}</Notice>}
-      <Card title={`${m.company} (${m.ticker}) · ${m.quarter} ${m.fiscalYear}`} subtitle={<>{m.source}{m.sourceUrl && <> · <a href={m.sourceUrl} target="_blank" rel="noopener noreferrer">Source <ExternalLink size={11} /></a></>} · analysed {dateTime(m.createdAt)}</>}>
+      <Card title={`${m.company} (${m.ticker}) · ${m.quarter} ${m.fiscalYear}`} subtitle={<>{m.source}{/^https?:\/\//i.test(m.sourceUrl || '') && <> · <a href={m.sourceUrl} target="_blank" rel="noopener noreferrer">Source <ExternalLink size={11} /></a></>} · analysed {dateTime(m.createdAt)}</>}>
         <Notice tone="info">Text in quotation marks is checked against the transcript. Everything else on this page is AI interpretation.</Notice>
         <p>{a.executiveSummary}</p>
         {a.quoteVerification && <p className="small muted">{a.quoteVerification.verified} of {a.quoteVerification.total} quotes found verbatim. {a.quoteVerification.note}</p>}

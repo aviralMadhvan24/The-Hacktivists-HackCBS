@@ -139,6 +139,8 @@ test.describe.serial('family flow', () => {
     await page.getByRole('button', { name: 'Run stress test' }).click();
     await expect(page.getByText('Cash over time')).toBeVisible();
     await expect(page.getByText('Portfolio loss').first()).toBeVisible();
+    await expect(page.getByText('Recovery plans')).toBeVisible();
+    await expect(page.getByText('Balanced', { exact: true })).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/stress-desktop.png`, fullPage: true });
 
     await page.getByRole('tab', { name: 'Breaking point' }).click();

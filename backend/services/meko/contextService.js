@@ -115,7 +115,7 @@ const addSchema = z.object({
   title: z.string().trim().min(3).max(160),
   body: z.string().trim().min(10).max(4000),
   private: z.boolean().default(false),
-  sources: z.array(z.object({ label: z.string().max(200), url: z.string().url().max(500).optional(), at: z.string().max(40).optional() })).max(20).default([]),
+  sources: z.array(z.object({ label: z.string().max(200), url: z.string().url().max(500).refine((u) => /^https?:\/\//i.test(u), 'Only http(s) links are allowed').optional(), at: z.string().max(40).optional() })).max(20).default([]),
   related: z.object({ type: z.enum(['proposal', 'simulation', 'concall', 'evaluation']), id: z.string().max(80) }).optional(),
 }).strict();
 

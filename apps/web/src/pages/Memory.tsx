@@ -61,7 +61,7 @@ export default function Memory() {
                   </span>
                 </div>
                 <p style={{ margin: '8px 0' }}>{m.body}</p>
-                <div className="small muted">{dateTime(m.createdAt)}{m.sources?.length > 0 && <> · Sources: {m.sources.map((s: any, i: number) => s.url ? <a key={i} href={s.url} target="_blank" rel="noopener noreferrer">{s.label} </a> : <span key={i}>{s.label} </span>)}</>}</div>
+                <div className="small muted">{dateTime(m.createdAt)}{m.sources?.length > 0 && <> · Sources: {m.sources.map((s: any, i: number) => /^https?:\/\//i.test(s.url || '') ? <a key={i} href={s.url} target="_blank" rel="noopener noreferrer">{s.label} </a> : <span key={i}>{s.label} </span>)}</>}</div>
               </Card>
             ))}
           </div>
