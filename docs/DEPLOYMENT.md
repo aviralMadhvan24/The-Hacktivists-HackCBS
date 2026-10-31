@@ -32,6 +32,15 @@ cd apps/forecast-service && .venv/Scripts/python main.py
 
 `npm run dev:db` uses PostgreSQL binaries from a dev dependency, so no Docker is needed. YugabyteDB YSQL is PostgreSQL-compatible and the schema avoids extensions; still run the migrations against YugabyteDB before production (below).
 
+## Demo data
+
+```bash
+cd backend && npm run seed:demo            # two demo families, 6 users (password: demo-pass-123)
+npm run seed:demo -- --reset                  # recreate; also removes their Meko datapacks
+```
+
+Demo users use `@demo.liquidityos.test` emails and "Demo" family names. The script refuses to run with NODE_ENV=production.
+
 ## Tests
 
 ```bash

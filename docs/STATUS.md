@@ -25,12 +25,13 @@ _2026-10-31. "Done" = implemented and exercised by automated tests and/or a live
 | Responsive web app (desktop + phone width), loading/empty/error states | 11 Playwright tests incl. mobile overflow |
 | Persistence across restarts | Manual restart check (session and family survived) |
 | **YugabyteDB Aeon** | Migrations 001–005 applied on YugabyteDB 2026.1.2 (Aeon, ap-south-1); all 77 backend tests pass against a separate `liquidityos_test` database on the cluster via `npm run test:remote` (2026-10-31) |
+| **Meko (live)** | Datapack creation, memory_add (ids returned), memory_search and per-member isolation verified against live Meko from the backend with the demo family (2026-10-31). Found and fixed: live Meko requires conversation_id for datapack_create/delete. |
+| Demo data | `npm run seed:demo` creates two labelled demo families (6 users) with live-priced holdings, proposals and Meko memories |
 
 ## Partially done
 
 | Feature | What's missing |
 |---|---|
-| **Meko** | Fully implemented and tested against a protocol-accurate test double. **Not yet verified against live Meko from the backend** — needs a backend API key. |
 | **Zerodha** | OAuth, encrypted tokens, holdings/funds sync and expiry handling implemented. **Not live-tested** — needs a paid Kite Connect app. |
 | **AI narratives** (agent, concall analysis, recovery) | Implemented for Gemini/OpenAI/Anthropic with JSON validation and quote checks. **Not run live** — no `GEMINI_API_KEY` configured. |
 | Docker | Dockerfiles and compose written; **images not built** — Docker Desktop's engine isn't running on this machine. |

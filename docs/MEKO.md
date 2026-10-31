@@ -57,4 +57,4 @@ So isolation is enforced by LiquidityOS, not by Meko:
 ## Verification status
 
 - **Tested** against an in-process MCP server that implements Meko's documented tool signatures and semantics (datapack-wide search, `{"result": "<json>"}` envelopes): isolation, injection filtering, sanitisation, correction, deletion, outage and resync, account deletion (`backend/tests/meko.test.js`).
-- **Not yet verified against live Meko from the backend**: there is no backend API key in `.env`. The exact shape of `memory_add` / `memory_search` responses is handled defensively (several envelope formats accepted). First live check after adding a key: Family memory → Add context, then Search; the item should show **In Meko**.
+- **Verified against live Meko** (2026-10-31): datapacks created per family and per user, memories stored with ids, searches served by Meko, and a member could not see another member's private memory. Live Meko requires `conversation_id` on `datapack_create`/`datapack_delete` (the schema marks it optional); the backend keeps a control conversation in the account's default datapack for this and recreates it if Meko stops recognising it.
