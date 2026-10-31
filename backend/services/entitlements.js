@@ -6,13 +6,14 @@ const { HttpError } = require('../lib/http');
 
 // monthly limits per plan; null = unlimited, 0 = not available
 const LIMITS = {
-  free: { investment_agent: 3, concall_analysis: 3, forecast: 10, advanced_stress: null },
-  premium: { investment_agent: 200, concall_analysis: 100, forecast: 1000, advanced_stress: null },
+  free: { investment_agent: 3, concall_analysis: 3, forecast: 10, assistant: 30, advanced_stress: null },
+  premium: { investment_agent: 200, concall_analysis: 100, forecast: 1000, assistant: 2000, advanced_stress: null },
 };
 const FEATURE_LABELS = {
   investment_agent: 'AI investment evaluations',
   concall_analysis: 'Concall analyses',
   forecast: 'Price forecasts',
+  assistant: 'Ask FinSight conversations',
   advanced_stress: 'Advanced stress testing',
 };
 

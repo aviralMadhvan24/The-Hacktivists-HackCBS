@@ -22,7 +22,7 @@ function listMigrations() {
 async function migrate({ log = console.log } = {}) {
   const enc = await db.query('SHOW server_encoding');
   if (enc.rows[0].server_encoding !== 'UTF8') {
-    throw new Error(`Database encoding is ${enc.rows[0].server_encoding}; LiquidityOS needs UTF8 (e.g. for ₹). Recreate the database with ENCODING 'UTF8'.`);
+    throw new Error(`Database encoding is ${enc.rows[0].server_encoding}; FinSight needs UTF8 (e.g. for ₹). Recreate the database with ENCODING 'UTF8'.`);
   }
   await db.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
     file TEXT PRIMARY KEY,

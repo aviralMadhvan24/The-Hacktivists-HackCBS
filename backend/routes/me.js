@@ -62,7 +62,7 @@ router.get('/export', wrap(async (req, res) => {
     brokerConnections: await q('SELECT broker, broker_user_id, connected_at, expires_at, revoked_at FROM broker_connections WHERE user_id = $1'),
   };
   await audit({ actorId: id, action: 'user.export', entityType: 'user', entityId: id, ip: req.ip });
-  res.setHeader('Content-Disposition', `attachment; filename="liquidityos-export-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.setHeader('Content-Disposition', `attachment; filename="finsight-export-${new Date().toISOString().slice(0, 10)}.json"`);
   res.json(data);
 }));
 

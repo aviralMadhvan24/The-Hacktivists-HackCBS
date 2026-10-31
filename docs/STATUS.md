@@ -26,6 +26,8 @@ _2026-10-31. "Done" = implemented and exercised by automated tests and/or a live
 | Persistence across restarts | Manual restart check (session and family survived) |
 | **YugabyteDB Aeon** | Migrations 001–005 applied on YugabyteDB 2026.1.2 (Aeon, ap-south-1); all 77 backend tests pass against a separate `liquidityos_test` database on the cluster via `npm run test:remote` (2026-10-31) |
 | **Meko (live)** | Datapack creation, memory_add (ids returned), memory_search and per-member isolation verified against live Meko from the backend with the demo family (2026-10-31). Found and fixed: live Meko requires conversation_id for datapack_create/delete. |
+| Ask FinSight (chat agent) | Tool-using agent over the engines and Meko; tests with a stubbed LLM (tool loop, grounding, consent, prompt-injection handling); live answer verified with Gemini on the demo family |
+| Gemini model fallback | Primary `gemini-flash-latest`, then `gemini-3.6-flash`, `gemini-3.5-flash` on 404/429/503 (Google retired gemini-2.5-flash for new keys) |
 | Demo data | `npm run seed:demo` creates two labelled demo families (6 users) with live-priced holdings, proposals and Meko memories |
 
 ## Partially done

@@ -1,5 +1,5 @@
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Activity, Brain, FileText, Gauge, LayoutGrid, LineChart, LogOut, Scale, Search, Settings as SettingsIcon, Users, Wallet } from 'lucide-react';
+import { Activity, Brain, FileText, Gauge, LayoutGrid, LineChart, LogOut, MessageCircle, Scale, Search, Settings as SettingsIcon, Users, Wallet } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSession } from './lib/session';
 import { Loading, Modal } from './components/ui';
@@ -15,9 +15,11 @@ import Invest from './pages/Invest';
 import Research from './pages/Research';
 import Forecast from './pages/Forecast';
 import Memory from './pages/Memory';
+import Assistant from './pages/Assistant';
 
 const NAV = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
+  { to: '/ask', label: 'Ask FinSight', icon: MessageCircle },
   { to: '/records', label: 'Money & records', icon: Wallet },
   { to: '/stress', label: 'Stress test', icon: Activity },
   { to: '/decisions', label: 'Decisions', icon: Scale },
@@ -32,9 +34,9 @@ const NAV = [
 // Bottom bar on phones: the four most used destinations plus "More".
 const TAB_BAR = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
+  { to: '/ask', label: 'Ask', icon: MessageCircle },
   { to: '/records', label: 'Money', icon: Wallet },
   { to: '/stress', label: 'Stress', icon: Activity },
-  { to: '/decisions', label: 'Decisions', icon: Scale },
 ];
 const DISC = ['ic-blue', 'ic-green', 'ic-orange', 'ic-teal', 'ic-violet', 'ic-blue', 'ic-green', 'ic-violet', 'ic-teal', 'ic-orange'];
 
@@ -42,7 +44,7 @@ function Brand() {
   return (
     <div className="brand">
       <img className="brand-mark" src="/favicon.svg" alt="" />
-      <span><span style={{ color: 'var(--text)' }}>Liquidity</span><span className="brand-name">OS</span></span>
+      <span><span style={{ color: 'var(--text)' }}>Fin</span><span className="brand-name">Sight</span></span>
     </div>
   );
 }
@@ -109,7 +111,7 @@ function Shell({ children }: { children: ReactNode }) {
 export default function App() {
   const { user, loadingUser, families } = useSession();
   const loc = useLocation();
-  if (loadingUser) return <Loading label="Starting LiquidityOS…" />;
+  if (loadingUser) return <Loading label="Starting FinSight…" />;
   if (!user) {
     return (
       <Routes>
@@ -136,6 +138,7 @@ export default function App() {
         <Route path="/stress" element={<Stress />} />
         <Route path="/decisions" element={<Decisions />} />
         <Route path="/decisions/:id" element={<Decisions />} />
+        <Route path="/ask" element={<Assistant />} />
         <Route path="/invest" element={<Invest />} />
         <Route path="/research" element={<Research />} />
         <Route path="/forecast" element={<Forecast />} />

@@ -83,7 +83,7 @@ async function createLoginUrl(userId) {
 /** Handles the OAuth callback. Returns the user id the connection belongs to. */
 async function handleCallback({ requestToken, state, status }) {
   requireConfigured();
-  if (!state) throw badRequest('Missing state. Start the Zerodha connection from LiquidityOS.');
+  if (!state) throw badRequest('Missing state. Start the Zerodha connection from FinSight.');
   const { rows } = await db.query(
     "DELETE FROM oauth_states WHERE state = $1 AND provider = 'zerodha' AND expires_at > now() RETURNING user_id", [String(state)]);
   if (!rows[0]) throw badRequest('This Zerodha login link has expired or was already used. Please try again.');

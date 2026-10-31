@@ -38,21 +38,42 @@ async function post(url, headers, body, provider) {
   return res.json();
 }
 
+// Primary model plus fallbacks: Google retires models for new keys (404) and
+// popular ones are sometimes overloaded (503/429), so we try the next one.
+function geminiModels() {
+  const primary = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.6-flash,gemini-3.5-flash').split(',').map((s) => s.trim()).filter(Boolean);
+  return [...new Set([primary, ...fallbacks])];
+}
+
 async function callGemini(prompt, { system, temperature }) {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { responseMimeType: 'application/json', temperature },
   };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
-  const data = await post(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-    { 'x-goog-api-key': process.env.GEMINI_API_KEY }, body, 'Gemini');
-  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
-  if (!text) {
-    const reason = data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason || 'empty response';
-    throw Object.assign(new Error(`Gemini returned no content (${reason}).`), { code: 'LLM_BAD_OUTPUT' });
+  let lastErr;
+  // Two passes over the model list; pause before the second if everything was busy.
+  const chain = [...geminiModels(), null, ...geminiModels()];
+  for (const model of chain) {
+    if (model === null) { await new Promise((r) => setTimeout(r, 2000)); continue; }
+    let data;
+    try {
+      data = await post(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        { 'x-goog-api-key': process.env.GEMINI_API_KEY }, body, 'Gemini');
+    } catch (err) {
+      lastErr = err;
+      if (/\((404|429|500|503)\)/.test(err.message)) continue; // retired, rate-limited or overloaded → next model
+      throw err;
+    }
+    const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
+    if (!text) {
+      const reason = data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason || 'empty response';
+      throw Object.assign(new Error(`Gemini returned no content (${reason}).`), { code: 'LLM_BAD_OUTPUT' });
+    }
+    return { json: parseJson(text, 'Gemini'), provider: 'Google Gemini', model: data.modelVersion || model };
   }
-  return { json: parseJson(text, 'Gemini'), provider: 'Google Gemini', model };
+  throw lastErr;
 }
 
 async function callOpenAI(prompt, { system, temperature }) {

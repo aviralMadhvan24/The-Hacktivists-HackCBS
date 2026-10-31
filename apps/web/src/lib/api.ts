@@ -32,7 +32,7 @@ async function request<T>(method: Method, path: string, body?: unknown, init?: {
   try {
     res = await fetch(`/api${path}`, { method, headers, body: payload, credentials: 'same-origin' });
   } catch {
-    throw new ApiError(0, 'NETWORK', 'Cannot reach the LiquidityOS server. Check your connection.');
+    throw new ApiError(0, 'NETWORK', 'Cannot reach the FinSight server. Check your connection.');
   }
   const text = await res.text();
   let json: any = null;

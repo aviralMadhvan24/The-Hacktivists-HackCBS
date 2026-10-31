@@ -92,7 +92,7 @@ function Zerodha() {
   const disconnect = useMutation({ mutationFn: () => api.post('/zerodha/disconnect'), onSuccess: () => qc.invalidateQueries({ queryKey: ['zerodha'] }) });
   const s = status.data;
   return (
-    <Card title="Zerodha (Kite Connect)" subtitle="Read-only sync of holdings. LiquidityOS never places trades.">
+    <Card title="Zerodha (Kite Connect)" subtitle="Read-only sync of holdings. FinSight never places trades.">
       {status.isLoading && <Loading />}
       {s && !s.isConfigured && <Notice tone="warn">Zerodha isn't configured on this server. An administrator must add Kite Connect API credentials.</Notice>}
       {s && s.isConfigured && (

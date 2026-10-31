@@ -198,13 +198,13 @@ async function evaluate(familyId, userId, body, ip, deps = defaultDeps()) {
       facts,
       narrative,
       sources: [
-        { label: 'Family records', detail: 'LiquidityOS database, your view of the family', at: new Date().toISOString() },
+        { label: 'Family records', detail: 'FinSight database, your view of the family', at: new Date().toISOString() },
         { label: 'Price', detail: `${quote.source || 'Yahoo Finance'} (${quote.freshness})`, at: quote.timestamp },
         ...(history ? [{ label: 'Price history (5y, adjusted)', detail: history.source, at: history.fetchedAt }] : []),
         ...(fundamentals ? [{ label: 'Fundamentals', detail: fundamentals.source, at: fundamentals.retrievedAt }] : []),
         ...concalls.map((c) => ({ label: `Concall analysis ${c.quarter} ${c.fiscal_year}`, detail: 'Your saved analysis', at: c.created_at })),
       ],
-      disclaimer: 'Decision support, not investment advice. Historical ranges describe the past and do not predict future returns. LiquidityOS does not place trades.',
+      disclaimer: 'Decision support, not investment advice. Historical ranges describe the past and do not predict future returns. FinSight does not place trades.',
     };
     await db.query('INSERT INTO agent_evaluations (id, family_id, user_id, symbol, exchange, amount, result) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [result.id, familyId, userId, input.symbol, input.exchange, input.amount, JSON.stringify(result)]);
@@ -216,7 +216,7 @@ async function evaluate(familyId, userId, body, ip, deps = defaultDeps()) {
   }
 }
 
-const SYSTEM = `You are LiquidityOS's investment analyst for Indian families. You explain whether a proposed stock purchase fits the family's whole financial position.
+const SYSTEM = `You are FinSight's investment analyst for Indian families. You explain whether a proposed stock purchase fits the family's whole financial position.
 Rules:
 - Use only the facts provided. Do not introduce numbers, news or events that are not in the facts. If something important is missing, say it is missing.
 - Never guarantee or predict returns. Historical ranges describe the past only.

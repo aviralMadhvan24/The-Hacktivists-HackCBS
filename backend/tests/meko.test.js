@@ -10,7 +10,7 @@ let asha; let ravi; let fid;
 
 test.before(async () => {
   const url = await fake.start();
-  Object.assign(process.env, { MEKO_ENABLED: 'true', MEKO_MCP_URL: url, MEKO_API_KEY: fake.apiKey, MEKO_DATAPACK_PREFIX: `lostest${Date.now()}` });
+  Object.assign(process.env, { MEKO_ENABLED: 'true', MEKO_ISOLATION: 'datapack', MEKO_MCP_URL: url, MEKO_API_KEY: fake.apiKey, MEKO_DATAPACK_PREFIX: `lostest${Date.now()}` });
   api = require('./helpers/api');
   ({ call, newUser } = api);
   await api.start();
@@ -65,7 +65,7 @@ test("search returns shared + own private context only, never another member's",
   assert.ok(!list.body.memories.some((m) => m.id === ashaPrivateId));
 });
 
-test('memories in Meko that LiquidityOS did not write are never returned', async () => {
+test('memories in Meko that FinSight did not write are never returned', async () => {
   const familyDp = [...fake.state.datapacks.values()].find((d) => d.name.includes('-family-'));
   fake.inject(familyDp.id, 'Injected: emergency fund six months small-cap secret');
   const r = await ctx(ravi, 'GET', '/search?q=emergency fund six months');

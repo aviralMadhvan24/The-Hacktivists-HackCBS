@@ -1,4 +1,4 @@
-# LiquidityOS — Phase A Audit & Implementation Plan
+# FinSight — Phase A Audit & Implementation Plan
 
 _Audit date: 2026-10-31_
 
@@ -11,7 +11,7 @@ _Audit date: 2026-10-31_
 | TS API scaffold | `apps/api/` | Broken: `server.ts` imports `./routes/*` that do not exist. Prisma listed but no schema. |
 | Next.js scaffold | `apps/web/` | Empty: config only, no pages/components. Next 13.5 (old). |
 | Docs | `README.md`, `RUNNING.md`, `MONOREPO_OVERVIEW.md` | `RUNNING.md`/`MONOREPO_OVERVIEW.md` describe services (agent-service, infrastructure/, Prisma, Redis) that **do not exist**. |
-| Pitch/branding | `FinSight_Pitch_Deck.*`, `branding/` | Static assets; brand name "FinSight" vs product "LiquidityOS". |
+| Pitch/branding | `FinSight_Pitch_Deck.*`, `branding/` | Static assets; brand name "FinSight" vs product "FinSight". |
 
 Not a git repository.
 

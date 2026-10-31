@@ -93,3 +93,18 @@ test('research: discover transcripts on a company IR page', async ({ page }) => 
   await expect(page.getByRole('link', { name: /Transcript/i }).first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/research-desktop.png`, fullPage: true });
 });
+
+test('Ask FinSight: consent gate, starters, and a clear message when AI is unavailable', async ({ page }) => {
+  await setup(page);
+  await page.getByRole('link', { name: 'Ask FinSight' }).first().click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Ask FinSight' })).toBeVisible();
+  await expect(page.getByText(/turn on/i).first()).toBeVisible();
+  await page.getByRole('link', { name: 'Settings' }).first().click();
+  await page.getByRole('checkbox', { name: 'AI analysis of my finances' }).check();
+  await page.getByRole('link', { name: 'Ask FinSight' }).first().click();
+  await page.getByRole('button', { name: /Kya hum ₹9 lakh ki car/ }).click();
+  await expect(page.getByText('Kya hum ₹9 lakh ki car abhi le sakte hain?')).toBeVisible();
+  // AI keys are blanked in e2e, so the server answers 503 and the page explains it.
+  await expect(page.getByText(/No AI provider is configured|busy/)).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ask-desktop.png`, fullPage: true });
+});

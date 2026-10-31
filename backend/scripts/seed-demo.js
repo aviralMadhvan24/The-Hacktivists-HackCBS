@@ -3,7 +3,7 @@
 //   npm run seed:demo            create demo data (skips users that already exist)
 //   npm run seed:demo -- --reset delete existing demo users/families first, then recreate
 //
-// Every demo user has an @demo.liquidityos.test email and the same password, and
+// Every demo user has an @demo.finsight.test email and the same password, and
 // every family name starts with "Demo". Refuses to run when NODE_ENV=production
 // unless --force is passed, because the demo password is public.
 require('dotenv').config();
@@ -17,7 +17,9 @@ const context = require('../services/meko/contextService');
 const market = require('../services/marketData');
 const { randomUUID } = require('crypto');
 
-const DOMAIN = 'demo.liquidityos.test';
+const DOMAIN = 'demo.finsight.test';
+// Demo users created before the rename are cleaned up by --reset too.
+const LEGACY_DOMAINS = ['demo.liquidityos.test'];
 const PASSWORD = 'demo-pass-123';
 const IP = '127.0.0.1';
 const args = new Set(process.argv.slice(2));
@@ -32,7 +34,8 @@ const USERS = {
 };
 
 async function resetDemo() {
-  const { rows } = await db.query('SELECT id FROM users WHERE email LIKE $1', [`%@${DOMAIN}`]);
+  const patterns = [DOMAIN, ...LEGACY_DOMAINS].map((d) => `%@${d}`);
+  const { rows } = await db.query('SELECT id FROM users WHERE email LIKE ANY($1::text[])', [patterns]);
   const ids = rows.map((r) => r.id);
   if (!ids.length) return 0;
   // Remove their Meko datapacks too, so nothing is left behind in Meko.

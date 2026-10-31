@@ -1,9 +1,10 @@
-# LiquidityOS
+# FinSight
 
-**Family financial resilience and investment intelligence.** LiquidityOS brings a family's accounts, investments, loans and cash flow together, scores how resilient they are, stress-tests them against market crashes, job loss and medical emergencies, and evaluates proposed investments against the whole family position.
+**Family financial resilience and investment intelligence.** FinSight brings a family's accounts, investments, loans and cash flow together, scores how resilient they are, stress-tests them against market crashes, job loss and medical emergencies, and evaluates proposed investments against the whole family position.
 
 ## What it does
 
+- **Ask FinSight**: a conversational financial guide (English or Hinglish) that runs real stress tests, decision checks and family-memory searches as tools, and answers only from those results.
 - **Family finances**: members with roles, shared and private records, ownership splits (including co-owners outside the family) with no double counting.
 - **Five-pillar resilience score**: emergency cash, cash flow, debt burden, diversification, market-shock absorption. Deterministic and explained ([methodology](docs/RESILIENCE_SCORE.md)).
 - **Stress tests**: combined shocks, month-by-month projections, scenario comparison, breaking-point search, recovery plans ([engine](docs/STRESS_ENGINE.md)).
@@ -52,4 +53,4 @@ Full instructions: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 `backend/` API and engine · `apps/web/` web app · `apps/forecast-service/` forecasting · `docs/` documentation · `los2/` original iOS app (not maintained by this work) · `branding/`, pitch deck: original assets.
 
-LiquidityOS provides decision support, not investment advice, and never places trades.
+FinSight provides decision support, not investment advice, and never places trades.

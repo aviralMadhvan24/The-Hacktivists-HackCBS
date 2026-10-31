@@ -136,7 +136,7 @@ function Find({ onOpen }: { onOpen: (id: string) => void }) {
   const [periods, setPeriods] = useState<Record<string, { quarter: string; fiscalYear: string }>>({});
   return (
     <div className="stack">
-      <Notice>Listed companies must publish earnings-call transcripts on their own websites (SEBI LODR Reg. 46). LiquidityOS reads those pages, respecting each site's robots.txt. Some companies block automated access — then download the PDF and upload it.</Notice>
+      <Notice>Listed companies must publish earnings-call transcripts on their own websites (SEBI LODR Reg. 46). FinSight reads those pages, respecting each site's robots.txt. Some companies block automated access — then download the PDF and upload it.</Notice>
       <Card title="Company investor-relations pages">
         <form className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }} onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate(); }}>
           <Field label="Ticker"><input value={src.ticker} onChange={(e) => setSrc({ ...src, ticker: e.target.value.toUpperCase() })} required placeholder="HDFCBANK" /></Field>

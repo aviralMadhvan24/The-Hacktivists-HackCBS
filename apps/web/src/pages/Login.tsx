@@ -30,7 +30,7 @@ export default function Login() {
     <div className="auth">
       <div className="auth-hero">
         <h1>Can your family withstand the next financial shock?</h1>
-        <p>LiquidityOS brings your family's accounts, loans and cash flow together, then stress-tests them against market crashes, job loss and emergencies.</p>
+        <p>FinSight brings your family's accounts, loans and cash flow together, then stress-tests them against market crashes, job loss and emergencies.</p>
         <div className="auth-points">
           <div><Users size={20} /> <span>Shared and private finances, with ownership split correctly — nothing counted twice.</span></div>
           <div><Activity size={20} /> <span>Transparent five-pillar resilience score and scenario stress tests built on your real numbers.</span></div>

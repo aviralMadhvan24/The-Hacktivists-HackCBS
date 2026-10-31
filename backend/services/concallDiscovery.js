@@ -2,7 +2,7 @@
 //
 // Why this source: SEBI LODR Regulation 46 requires listed companies to publish
 // earnings-call transcripts on their own websites. NSE and BSE block automated
-// access to their announcement APIs, so LiquidityOS does not scrape them.
+// access to their announcement APIs, so FinSight does not scrape them.
 //
 // Flow: user (or a saved company profile) gives an IR page URL → we list PDF
 // links that look like transcripts, inferring quarter/FY from the link text →

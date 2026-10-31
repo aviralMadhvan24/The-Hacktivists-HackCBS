@@ -1,4 +1,4 @@
-# Running and Deploying LiquidityOS
+# Running and Deploying FinSight
 
 ## Components
 
@@ -39,7 +39,7 @@ cd backend && npm run seed:demo            # two demo families, 6 users (passwor
 npm run seed:demo -- --reset                  # recreate; also removes their Meko datapacks
 ```
 
-Demo users use `@demo.liquidityos.test` emails and "Demo" family names. The script refuses to run with NODE_ENV=production.
+Demo users use `@demo.finsight.test` emails and "Demo" family names. The script refuses to run with NODE_ENV=production.
 
 ## Tests
 
@@ -73,8 +73,8 @@ Backups: enable scheduled backups and point-in-time recovery in Aeon; test a res
 ## Docker
 
 ```bash
-docker build -t liquidityos .                                # API + web
-docker build -t liquidityos-forecast apps/forecast-service   # bakes in model weights (~190MB)
+docker build -t finsight .                                # API + web
+docker build -t finsight-forecast apps/forecast-service   # bakes in model weights (~190MB)
 docker compose up --build                                    # api + forecast, using backend/.env
 docker compose --profile localdb up --build                  # also runs single-node YugabyteDB on :5433
 ```

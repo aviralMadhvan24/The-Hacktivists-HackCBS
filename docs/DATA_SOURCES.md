@@ -36,4 +36,4 @@ The adapter interface (`backend/services/marketData/MarketDataAdapter.js`) lets 
 3. `backend/.env`: `ZERODHA_API_KEY`, `ZERODHA_API_SECRET`, `WEB_APP_URL`, and a 64-hex-char `APP_ENCRYPTION_KEY` (encrypts access tokens at rest, AES-256-GCM).
 4. In the app: Settings → Connect Zerodha → Sync holdings (choose family and visibility, private by default).
 
-Flow details: one-time `state` bound to the user via Kite's `redirect_params`; checksum `SHA256(api_key + request_token + api_secret)`; holdings (+T1 quantity) and equity margins; holdings no longer at Zerodha are removed from the synced account. LiquidityOS never places orders.
+Flow details: one-time `state` bound to the user via Kite's `redirect_params`; checksum `SHA256(api_key + request_token + api_secret)`; holdings (+T1 quantity) and equity margins; holdings no longer at Zerodha are removed from the synced account. FinSight never places orders.

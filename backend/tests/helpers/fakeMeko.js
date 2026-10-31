@@ -41,7 +41,7 @@ function createFakeMeko({ apiKey = 'mko_test_key_123456789' } = {}) {
     });
     server.tool('memory_add', { text: z.string(), conversation_id: z.string(), datapack_id: z.string().optional(), agent_id: z.string().optional(), metadata: z.string().optional() }, async (a) => {
       log('memory_add', a);
-      const dp = state.datapacks.get(a.datapack_id);
+      const dp = state.datapacks.get(a.datapack_id || state.conversations.get(a.conversation_id));
       if (!dp) return err('datapack_not_found', a.datapack_id);
       const id = randomUUID();
       dp.memories.set(id, { id, memory: a.text, agent_id: a.agent_id, metadata: a.metadata ? JSON.parse(a.metadata) : null });
@@ -49,7 +49,7 @@ function createFakeMeko({ apiKey = 'mko_test_key_123456789' } = {}) {
     });
     server.tool('memory_search', { query: z.string(), conversation_id: z.string(), datapack_id: z.string().optional(), agent_id: z.string().optional(), limit: z.number().optional() }, async (a) => {
       log('memory_search', a);
-      const dp = state.datapacks.get(a.datapack_id);
+      const dp = state.datapacks.get(a.datapack_id || state.conversations.get(a.conversation_id));
       if (!dp) return err('datapack_not_found', a.datapack_id);
       const terms = a.query.toLowerCase().split(/\W+/).filter((t) => t.length > 2);
       const results = [...dp.memories.values()] // NOTE: not filtered by agent_id, like the real service
@@ -59,7 +59,7 @@ function createFakeMeko({ apiKey = 'mko_test_key_123456789' } = {}) {
     });
     server.tool('memory_delete_by_id', { memory_id: z.string(), conversation_id: z.string(), datapack_id: z.string().optional(), agent_id: z.string().optional() }, async (a) => {
       log('memory_delete_by_id', a);
-      const dp = state.datapacks.get(a.datapack_id);
+      const dp = state.datapacks.get(a.datapack_id || state.conversations.get(a.conversation_id));
       if (!dp || !dp.memories.delete(a.memory_id)) return err('not_found', 'memory not found');
       return wrap({ deleted: true });
     });
@@ -87,7 +87,7 @@ function createFakeMeko({ apiKey = 'mko_test_key_123456789' } = {}) {
       return `http://127.0.0.1:${httpServer.address().port}/mcp`;
     },
     async stop() { httpServer.closeAllConnections?.(); await new Promise((r) => httpServer.close(r)); },
-    /** Plants a memory directly in a datapack (simulates data LiquidityOS never wrote). */
+    /** Plants a memory directly in a datapack (simulates data FinSight never wrote). */
     inject(datapackId, text) {
       const id = randomUUID();
       state.datapacks.get(datapackId).memories.set(id, { id, memory: text, agent_id: 'someone_else' });

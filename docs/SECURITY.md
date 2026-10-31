@@ -47,4 +47,4 @@ Public endpoint listing every user's email; one Zerodha session shared by all us
 - **RBI Account Aggregator framework**: required for any future bank-data aggregation (not implemented; no credential scraping is used).
 - **Market data licensing**: Yahoo data is unofficial; production use needs a licensed feed (see `DATA_SOURCES.md`).
 
-LiquidityOS does not claim compliance with any of these.
+FinSight does not claim compliance with any of these.

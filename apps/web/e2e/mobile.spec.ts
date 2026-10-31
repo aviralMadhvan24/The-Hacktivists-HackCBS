@@ -17,16 +17,16 @@ test('mobile layout has no horizontal overflow', async ({ page }) => {
   await expect(page.getByText('No financial records yet')).toBeVisible();
   await noOverflow();
   const bar = page.locator('.mobile-nav');
-  for (const name of ['Money', 'Stress', 'Decisions', 'Overview']) {
+  for (const name of ['Ask', 'Money', 'Stress', 'Overview']) {
     await bar.getByRole('link', { name, exact: true }).click();
     await page.waitForLoadState('networkidle');
     await noOverflow();
   }
-  for (const name of ['Family', 'Settings']) {
+  for (const name of ['Decisions', 'Family', 'Settings']) {
     await bar.getByRole('button', { name: 'More' }).click();
     await page.getByRole('dialog').getByRole('link', { name, exact: true }).click();
     await page.waitForLoadState('networkidle');
-    await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: name === 'Decisions' ? 'Family decisions' : name })).toBeVisible();
     await noOverflow();
   }
   await page.screenshot({ path: `${SHOTS}/settings-mobile.png`, fullPage: true });

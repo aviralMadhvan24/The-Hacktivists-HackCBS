@@ -69,7 +69,7 @@ export default function FamilyPage() {
           </Card>
 
           {admin ? (
-            <Card title="Invite someone" subtitle="They'll need a LiquidityOS account with this email.">
+            <Card title="Invite someone" subtitle="They'll need a FinSight account with this email.">
               <form className="stack" onSubmit={(e: FormEvent) => { e.preventDefault(); sendInvite.mutate(); }}>
                 <div className="form-grid">
                   <Field label="Email"><input type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} required /></Field>

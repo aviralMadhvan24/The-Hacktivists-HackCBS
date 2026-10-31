@@ -1,4 +1,4 @@
-# LiquidityOS API + web app (one container). Build: docker build -t liquidityos .
+# FinSight API + web app (one container). Build: docker build -t finsight .
 # ---- web build ----
 FROM node:22-alpine AS web
 WORKDIR /web

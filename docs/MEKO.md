@@ -1,6 +1,6 @@
 # Meko Integration
 
-Meko is LiquidityOS's contextual memory: approved family goals, preferences, decision reasoning, stress-test summaries and company research. **It never stores or supplies balances**: every number comes from YugabyteDB.
+Meko is FinSight's contextual memory: approved family goals, preferences, decision reasoning, stress-test summaries and company research. **It never stores or supplies balances**: every number comes from YugabyteDB.
 
 ## How the backend connects
 
@@ -15,12 +15,21 @@ Tools used: `datapack_create`, `datapack_delete`, `conversation_create`, `memory
 ```env
 MEKO_ENABLED=true
 MEKO_MCP_URL=https://mcp.mekodata.ai/mcp
-MEKO_API_KEY=mko_...            # create a dedicated key for the LiquidityOS backend
-MEKO_DATAPACK_PREFIX=liquidityos # datapack names: <prefix>-family-<uuid>, <prefix>-user-<uuid>
+MEKO_API_KEY=mko_...            # create a dedicated key for the FinSight backend
+MEKO_DATAPACK_PREFIX=finsight # datapack names: <prefix>-family-<uuid>, <prefix>-user-<uuid>
 MEKO_AGENT_ID=liquidityos_backend
 ```
 
 With `MEKO_ENABLED=false` (default) everything still works: memories are saved to the YugabyteDB index and search uses local keyword matching, labelled as such in the UI.
+
+## Storage modes
+
+| `MEKO_ISOLATION` | Where memories go | When to use |
+|---|---|---|
+| `shared` (default) | One datapack: `MEKO_DATAPACK_ID`, or the account's default datapack | Meko free tier, which caps the number of datapacks (we hit `FREE_TIER_DATAPACK_LIMIT` at 4) |
+| `datapack` | One datapack per family and one per user | Paid Meko plans; strongest separation |
+
+In shared mode isolation is enforced entirely by the index below, and search results return only our own canonical text (never Meko's stored text), so even if Meko merges or links memories internally, no other family's or member's words can surface. Tested in `backend/tests/meko-shared.test.js`.
 
 ## Isolation design
 
@@ -29,7 +38,7 @@ Two facts about Meko shape the design:
 1. **An API key covers every datapack in the account.**
 2. **`memory_search` searches the whole datapack; `agent_id` does not filter it** (per the tool's own documentation).
 
-So isolation is enforced by LiquidityOS, not by Meko:
+So isolation is enforced by FinSight, not by Meko:
 
 | Control | Implementation |
 |---|---|

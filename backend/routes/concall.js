@@ -129,7 +129,7 @@ router.post('/import', wrap(async (req, res) => {
     `SELECT quarter, fiscal_year, analysis FROM concall_analyses WHERE user_id = $1 AND ticker = $2
      AND NOT (quarter = $3 AND fiscal_year = $4) ORDER BY fiscal_year DESC, quarter DESC LIMIT 1`, [req.user.id, input.ticker, input.quarter, input.fiscalYear]);
   const priorText = prior.rows[0]
-    ? `PREVIOUS QUARTER ANALYSIS SUMMARY (${prior.rows[0].quarter} ${prior.rows[0].fiscal_year}; this is LiquidityOS's earlier analysis, not a transcript):\n${JSON.stringify({ executiveSummary: prior.rows[0].analysis.executiveSummary, growthAndGuidance: prior.rows[0].analysis.growthAndGuidance, financialPerformance: prior.rows[0].analysis.financialPerformance })}`
+    ? `PREVIOUS QUARTER ANALYSIS SUMMARY (${prior.rows[0].quarter} ${prior.rows[0].fiscal_year}; this is FinSight's earlier analysis, not a transcript):\n${JSON.stringify({ executiveSummary: prior.rows[0].analysis.executiveSummary, growthAndGuidance: prior.rows[0].analysis.growthAndGuidance, financialPerformance: prior.rows[0].analysis.financialPerformance })}`
     : null;
 
   const usage = await entitlements.consume(req.user.id, 'concall_analysis');

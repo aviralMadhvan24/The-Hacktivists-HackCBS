@@ -57,3 +57,7 @@ backend/data/
 __pycache__/
 .venv/
 *.pyc
+
+# Database CA certificates (download from your provider)
+backend/certs/
+*.crt

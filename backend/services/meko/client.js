@@ -20,9 +20,9 @@ function isEnabled() {
 
 async function connect() {
   const transport = new StreamableHTTPClientTransport(new URL(process.env.MEKO_MCP_URL), {
-    requestInit: { headers: { Authorization: `Bearer ${process.env.MEKO_API_KEY}`, 'User-Agent': 'liquidityos-backend/2.0' } },
+    requestInit: { headers: { Authorization: `Bearer ${process.env.MEKO_API_KEY}`, 'User-Agent': 'finsight-backend/2.0' } },
   });
-  const client = new Client({ name: 'liquidityos-backend', version: '2.0.0' });
+  const client = new Client({ name: 'finsight-backend', version: '2.0.0' });
   await client.connect(transport);
   return client;
 }

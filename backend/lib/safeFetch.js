@@ -10,7 +10,7 @@ const dnsCb = require('dns');
 const net = require('net');
 const { Agent, fetch } = require('undici');
 
-const USER_AGENT = 'LiquidityOS-ResearchBot/1.0 (+contact: site administrator)';
+const USER_AGENT = 'FinSight-ResearchBot/1.0 (+contact: site administrator)';
 const lastHit = new Map();
 const MIN_INTERVAL_MS = Number(process.env.RESEARCH_MIN_INTERVAL_MS || 2000);
 
@@ -70,7 +70,7 @@ async function allowedByRobots(u) {
         for (const line of (await res.text()).split(/\r?\n/)) {
           const [k, ...rest] = line.split(':');
           const key = k.trim().toLowerCase(); const val = rest.join(':').trim();
-          if (key === 'user-agent') applies = val === '*' || /liquidityos/i.test(val);
+          if (key === 'user-agent') applies = val === '*' || /finsight/i.test(val);
           else if (applies && key === 'disallow' && val) rules.disallow.push(val);
         }
       }

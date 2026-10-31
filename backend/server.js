@@ -65,7 +65,7 @@ app.get('/api/health', async (req, res) => {
   const integrations = integrationStatus();
   res.status(database.reachable ? 200 : 503).json({
     status: database.reachable ? 'healthy' : 'degraded',
-    service: 'LiquidityOS API',
+    service: 'FinSight API',
     version: '2.0.0',
     database,
     integrations,
@@ -93,7 +93,7 @@ if (fs.existsSync(path.join(webDist, 'index.html'))) {
   app.use(express.static(webDist, { index: false, maxAge: '1h' }));
   app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(webDist, 'index.html')));
 } else {
-  app.get('/', (req, res) => res.send('LiquidityOS API is running. Build the web app (apps/web) to serve the UI here. Health: /api/health'));
+  app.get('/', (req, res) => res.send('FinSight API is running. Build the web app (apps/web) to serve the UI here. Health: /api/health'));
 }
 
 app.use(errorMiddleware);
@@ -105,7 +105,7 @@ async function start() {
   } else if (!db.isConfigured()) {
     console.warn('DATABASE_URL is not set: the API will start, but data routes return 503.');
   }
-  app.listen(PORT, '0.0.0.0', () => console.log(`LiquidityOS API listening on http://localhost:${PORT}`));
+  app.listen(PORT, '0.0.0.0', () => console.log(`FinSight API listening on http://localhost:${PORT}`));
 }
 
 if (require.main === module) {

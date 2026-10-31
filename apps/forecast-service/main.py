@@ -1,4 +1,4 @@
-"""LiquidityOS forecast service.
+"""FinSight forecast service.
 
 Wraps Amazon Chronos-Bolt (amazon/chronos-bolt-small, Apache-2.0), a pretrained
 time-series foundation model, behind a small HTTP API. It is stateless: the
@@ -31,7 +31,7 @@ MODEL_ID = os.environ.get("FORECAST_MODEL", "amazon/chronos-bolt-small")
 MAX_CONTEXT = 2048
 torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
 
-app = FastAPI(title="LiquidityOS forecast service", version="1.0.0")
+app = FastAPI(title="FinSight forecast service", version="1.0.0")
 _pipeline = None
 _loaded_at = None
 

@@ -10,6 +10,7 @@ const proposals = require('../services/proposalService');
 const db = require('../db/pool');
 const context = require('../services/meko/contextService');
 const agent = require('../services/investmentAgent');
+const assistant = require('../services/assistant');
 
 const router = express.Router();
 const ip = (req) => req.ip;
@@ -70,6 +71,9 @@ router.get('/:fid/proposals/:pid/impact', wrap(async (req, res) => res.json({ su
 router.post('/:fid/proposals/:pid/comments', wrap(async (req, res) => res.status(201).json({ success: true, proposal: await proposals.comment(req.params.fid, uid(req), req.params.pid, req.body, ip(req)) })));
 router.post('/:fid/proposals/:pid/vote', wrap(async (req, res) => res.json({ success: true, proposal: await proposals.vote(req.params.fid, uid(req), req.params.pid, req.body, ip(req)) })));
 router.post('/:fid/proposals/:pid/withdraw', wrap(async (req, res) => res.json({ success: true, proposal: await proposals.withdraw(req.params.fid, uid(req), req.params.pid, ip(req)) })));
+
+// ---- Ask FinSight (conversational guide) ---------------------------------------------
+router.post('/:fid/assistant/chat', wrap(async (req, res) => res.json({ success: true, ...(await assistant.chat(req.params.fid, uid(req), req.body, ip(req))) })));
 
 // ---- Investment intelligence agent -------------------------------------------------
 router.post('/:fid/agent/evaluate', wrap(async (req, res) => res.json({ success: true, evaluation: await agent.evaluate(req.params.fid, uid(req), req.body, ip(req)) })));
