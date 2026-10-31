@@ -1,8 +1,8 @@
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Activity, Brain, FileText, Gauge, LineChart, LogOut, Scale, Search, Settings as SettingsIcon, Users, Wallet } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Activity, Brain, FileText, Gauge, LayoutGrid, LineChart, LogOut, Scale, Search, Settings as SettingsIcon, Users, Wallet } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useSession } from './lib/session';
-import { Loading } from './components/ui';
+import { Loading, Modal } from './components/ui';
 import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
 import Overview from './pages/Overview';
@@ -29,38 +29,78 @@ const NAV = [
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
+// Bottom bar on phones: the four most used destinations plus "More".
+const TAB_BAR = [
+  { to: '/', label: 'Overview', icon: Gauge, end: true },
+  { to: '/records', label: 'Money', icon: Wallet },
+  { to: '/stress', label: 'Stress', icon: Activity },
+  { to: '/decisions', label: 'Decisions', icon: Scale },
+];
+const DISC = ['ic-blue', 'ic-green', 'ic-orange', 'ic-teal', 'ic-violet', 'ic-blue', 'ic-green', 'ic-violet', 'ic-teal', 'ic-orange'];
+
+function Brand() {
+  return (
+    <div className="brand">
+      <img className="brand-mark" src="/favicon.svg" alt="" />
+      <span><span style={{ color: 'var(--text)' }}>Liquidity</span><span className="brand-name">OS</span></span>
+    </div>
+  );
+}
+
+function FamilySwitcher() {
+  const { families, familyId, setFamilyId } = useSession();
+  if (families.length === 0) return null;
+  return (
+    <select value={familyId ?? ''} onChange={(e) => setFamilyId(e.target.value)} aria-label="Select family" style={{ width: 'auto', maxWidth: '100%' }}>
+      {families.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+    </select>
+  );
+}
+
 function Shell({ children }: { children: ReactNode }) {
-  const { user, families, familyId, setFamilyId, signOut } = useSession();
+  const { user, signOut } = useSession();
+  const [more, setMore] = useState(false);
+  const loc = useLocation();
+  useEffect(() => { setMore(false); }, [loc.pathname]);
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">
-          <img className="brand-mark" src="/favicon.svg" alt="" />
-          LiquidityOS
+        <Brand />
+        <div style={{ padding: '0 4px' }}>
+          <div className="nav-section" style={{ padding: '0 0 6px 4px' }}>Family</div>
+          <FamilySwitcher />
         </div>
-        {families.length > 0 && (
-          <label>
-            <span className="nav-section" style={{ display: 'block', padding: '0 0 6px 4px' }}>Family</span>
-            <select value={familyId ?? ''} onChange={(e) => setFamilyId(e.target.value)} aria-label="Select family">
-              {families.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
-          </label>
-        )}
         <nav className="nav" aria-label="Main">
           {NAV.map(({ to, label, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end}><Icon size={17} aria-hidden /> {label}</NavLink>
+            <NavLink key={to} to={to} end={end}><Icon size={18} aria-hidden /> {label}</NavLink>
           ))}
         </nav>
         <div className="sidebar-foot stack-sm">
-          <div className="break">{user?.name}<br /><span className="muted">{user?.email}</span></div>
-          <button className="btn btn-ghost btn-sm" style={{ color: '#C9D6E0', justifyContent: 'flex-start' }} onClick={signOut}><LogOut size={15} /> Sign out</button>
+          <div className="row" style={{ flexWrap: 'nowrap', gap: 10 }}>
+            <span className="icon-disc ic-blue" style={{ fontWeight: 700 }}>{(user?.name || '?').slice(0, 1).toUpperCase()}</span>
+            <div className="break" style={{ minWidth: 0 }}><strong>{user?.name}</strong><br /><span className="muted small">{user?.email}</span></div>
+          </div>
+          <button className="btn btn-ghost btn-sm" style={{ justifyContent: 'flex-start' }} onClick={signOut}><LogOut size={15} /> Sign out</button>
         </div>
       </aside>
       <div className="main">
-        <nav className="mobile-nav" aria-label="Main">
-          {NAV.map(({ to, label, end }) => <NavLink key={to} to={to} end={end}>{label}</NavLink>)}
-        </nav>
+        <div className="mobile-head">
+          <Brand />
+          <FamilySwitcher />
+        </div>
         {children}
+        <nav className="mobile-nav" aria-label="Main">
+          {TAB_BAR.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end}><Icon size={22} aria-hidden />{label}</NavLink>)}
+          <button onClick={() => setMore(true)} aria-haspopup="dialog"><LayoutGrid size={22} aria-hidden />More</button>
+        </nav>
+        <Modal title="More" open={more} onClose={() => setMore(false)}>
+          <nav className="sheet-list" aria-label="More">
+            {NAV.filter((n) => !TAB_BAR.some((t) => t.to === n.to)).map(({ to, label, icon: Icon }, i) => (
+              <Link key={to} to={to}><span className={`icon-disc lg ${DISC[i]}`}><Icon size={22} /></span>{label}</Link>
+            ))}
+            <a href="#signout" onClick={(e) => { e.preventDefault(); signOut(); }}><span className="icon-disc lg ic-red"><LogOut size={22} /></span>Sign out</a>
+          </nav>
+        </Modal>
       </div>
     </div>
   );

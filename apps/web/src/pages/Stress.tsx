@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import type { Shock, StressResult } from '../lib/types';
@@ -45,7 +45,8 @@ export function describeShock(s: Shock, memberName?: (id: string) => string): st
 }
 
 export default function Stress() {
-  const [tab, setTab] = useState<'run' | 'compare' | 'reverse' | 'saved'>('run');
+  const initial = new URLSearchParams(window.location.search).get('tab');
+  const [tab, setTab] = useState<'run' | 'compare' | 'reverse' | 'saved'>(initial === 'reverse' || initial === 'compare' || initial === 'saved' ? initial : 'run');
   return (
     <>
       <PageHeader title="Stress test"><ScopePicker /></PageHeader>
@@ -216,6 +217,28 @@ export function StressResultView({ r, memberName }: { r: StressResult; memberNam
         <Stat label="Cash runway" value={months(i.cashRunwayMonths)} hint={i.totalRunwayMonths !== null ? `${months(i.totalRunwayMonths)} incl. investments` : 'Investments cover the gap'} tone={i.cashRunwayMonths === null ? 'good' : i.cashRunwayMonths < 3 ? 'bad' : 'warn'} />
         <Stat label="Forced selling" value={inrCompact(i.forcedSales)} hint={i.firstForcedSaleMonth !== null ? `starting month ${i.firstForcedSaleMonth}` : 'None needed'} tone={i.forcedSales > 0 ? 'warn' : 'good'} />
       </div>
+      {r.before.equityExposure > 0 && (
+        <Card title="Drawdown visualizer" subtitle="Equity holdings before and after the market shock">
+          <div className="chart-box" style={{ height: 240 }}>
+            <ResponsiveContainer>
+              <BarChart data={[
+                { name: 'Pre-shock', value: r.before.equityExposure, fill: 'var(--chart-1)' },
+                { name: 'Remaining', value: Math.max(0, r.before.equityExposure - i.portfolioLoss), fill: 'var(--chart-2)' },
+                { name: 'Loss', value: i.portfolioLoss, fill: 'var(--chart-5)' },
+              ]} margin={{ left: 4, right: 8, top: 24 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: 'var(--text-2)', fontSize: 13, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={inrCompact} tick={{ fill: 'var(--text-3)', fontSize: 11 }} axisLine={false} tickLine={false} width={64} />
+                <Tooltip formatter={(v) => inr(Number(v))} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }} cursor={{ fill: 'var(--surface-2)' }} />
+                <Bar dataKey="value" radius={[12, 12, 4, 4]} maxBarSize={96} isAnimationActive={false}>
+                  {['var(--chart-1)', 'var(--chart-2)', 'var(--chart-5)'].map((c) => <Cell key={c} fill={c} />)}
+                  <LabelList dataKey="value" position="top" formatter={(v: unknown) => inrCompact(Number(v))} style={{ fill: 'var(--text-2)', fontWeight: 700, fontSize: 13 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
       <div className="grid grid-3">
         <Card title="Cash over time" subtitle="Liquid cash and remaining semi-liquid assets, month by month" className="span-2">
           <div className="chart-box" style={{ height: 300 }}>

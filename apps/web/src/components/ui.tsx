@@ -31,7 +31,7 @@ export function Stat({ label, value, hint, tone }: { label: string; value: React
   );
 }
 
-type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; loading?: boolean; size?: 'sm' | 'md' };
+type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'soft'; loading?: boolean; size?: 'sm' | 'md' };
 export function Button({ variant = 'primary', loading, size = 'md', children, disabled, className = '', ...rest }: BtnProps) {
   return (
     <button className={`btn btn-${variant} btn-${size} ${className}`} disabled={disabled || loading} {...rest}>
@@ -141,6 +141,7 @@ export function Tabs<T extends string>({ value, onChange, options }: { value: T;
 }
 
 export function Meter({ value, max, tone }: { value: number; max: number; tone?: string }) {
+  // tone: good | ok | warn | bad
   const w = Math.max(0, Math.min(100, (value / max) * 100));
   return <div className="meter" aria-hidden><div className={`meter-fill ${tone || ''}`} style={{ width: `${w}%` }} /></div>;
 }
