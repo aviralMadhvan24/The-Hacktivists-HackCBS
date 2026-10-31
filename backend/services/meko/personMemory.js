@@ -48,18 +48,29 @@ async function controlConversationId() {
   return (await db.query("SELECT value FROM meko_settings WHERE key = 'control_conversation_id'")).rows[0].value;
 }
 
-/** Tries to create a dedicated datapack; returns null when Meko refuses (e.g. free-tier cap). */
+/** Tries to create (or find) the person's dedicated datapack; null when Meko refuses (e.g. free-tier cap). */
 async function tryCreateDatapack(userId) {
   if (process.env.MEKO_PERSON_DATAPACKS === 'never') return null;
+  const name = `${PREFIX}-person-${userId}`;
+  const cid = await controlConversationId();
   try {
-    const cid = await controlConversationId();
-    const dp = await meko.callTool('datapack_create', { name: `${PREFIX}-person-${userId}`, conversation_id: cid });
+    const dp = await meko.callTool('datapack_create', { name, conversation_id: cid });
     return pickId(dp, ['datapack_id', 'id']);
   } catch (err) {
-    if (/LIMIT|quota|upgrade|exists/i.test(err.message)) return null;
+    if (/exists/i.test(err.message)) {
+      // Already created (e.g. by an earlier attempt): use it.
+      const l = await meko.callTool('datapack_list', { conversation_id: cid });
+      const found = (Array.isArray(l) ? l : (l?.datapacks || [])).find((d) => (d.name || d.datapack_name) === name);
+      if (found) return found.id || found.datapack_id;
+    }
+    if (/LIMIT|quota|upgrade/i.test(err.message)) return null;
     throw err;
   }
 }
+
+// One binding setup per person at a time: concurrent actions (a chat turn and an
+// app activity note) must not create two places for the same person.
+const pending = new Map();
 
 /**
  * The person's { datapack_id, conversation_id, dedicated }. Created on first use.
@@ -70,6 +81,13 @@ async function binding(userId, { create = true } = {}) {
   const row = found.rows[0];
   if (row) return { datapack_id: row.datapack_id, conversation_id: row.conversation_id, dedicated: row.datapack_name !== 'shared' };
   if (!create || !meko.isEnabled()) return null;
+  if (pending.has(userId)) return pending.get(userId);
+  const job = createBinding(userId).finally(() => pending.delete(userId));
+  pending.set(userId, job);
+  return job;
+}
+
+async function createBinding(userId) {
   const user = (await db.query('SELECT name FROM users WHERE id = $1', [userId])).rows[0];
   let datapackId = await tryCreateDatapack(userId);
   const dedicated = Boolean(datapackId);

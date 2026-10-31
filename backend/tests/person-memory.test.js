@@ -118,3 +118,15 @@ test('documents go to the knowledge base, are searchable by their owner only, an
   assert.equal((await call('DELETE', `/api/me/documents/${list[0].id}`, { token: a.token })).status, 200);
   assert.equal(fake.state.kbDocs.size, 0);
 });
+
+test('two actions at the same moment create only one datapack for a person', async () => {
+  const f = await api.newUser('pf');
+  await call('POST', '/api/me/consents', { token: f.token, body: { scope: 'meko_context', granted: true } });
+  const person = require('../services/meko/personMemory');
+  const before = fake.state.datapacks.size;
+  await Promise.all([person.recordChatTurn(f.id, 'one', 'ok'), person.recordChatTurn(f.id, 'two', 'ok'), person.recordActivity(f.id, 'three')]);
+  assert.equal(fake.state.datapacks.size, before + 1);
+  const m = (await memory(f)).body;
+  assert.equal(m.storage, 'own datapack');
+  assert.equal(m.memories.length, 3);
+});
