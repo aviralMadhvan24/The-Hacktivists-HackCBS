@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 180" width="100%" height="100%">
+  <defs>
+    <linearGradient id="lightSymbolGrad" x1="12%" y1="88%" x2="88%" y2="12%">
+      <stop offset="0%" stop-color="#1E40AF"/>
+      <stop offset="35%" stop-color="#0284C7"/>
+      <stop offset="75%" stop-color="#0D9488"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+
+    <linearGradient id="lightWordmarkGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Clean Light Canvas -->
+  <rect width="760" height="180" rx="28" fill="#F8FAFC"/>
+  <rect width="760" height="180" rx="28" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- FinSight Standalone Monogram -->
+  <g transform="translate(42, 34) scale(0.276)">
+    <!-- 1. Resilience Spine -->
+    <rect x="134" y="124" width="56" height="264" rx="28" fill="url(#lightSymbolGrad)"/>
+    <!-- 2. Support Floor -->
+    <rect x="190" y="244" width="134" height="54" rx="27" fill="url(#lightSymbolGrad)"/>
+    <!-- 3. Breakout Trajectory -->
+    <path d="M 190 124 
+             L 264 124 
+             C 288 124 310 114 326 96 
+             L 364 54 
+             C 374 42 392 42 402 54 
+             C 412 66 410 84 398 96 
+             L 360 138 
+             C 344 156 322 168 298 168 
+             L 190 168 Z" 
+          fill="url(#lightSymbolGrad)"/>
+  </g>
+
+  <!-- FinSight Wordmark Typography -->
+  <g transform="translate(182, 0)">
+    <text x="0" y="98" font-family="'Plus Jakarta Sans', system-ui, -apple-system, 'SF Pro Display', 'Inter', sans-serif" font-size="62" font-weight="700" letter-spacing="-0.025em">
+      <tspan fill="#0F172A">Fin</tspan><tspan fill="url(#lightWordmarkGrad)">Sight</tspan>
+    </text>
+    
+    <text x="2" y="128" font-family="'Plus Jakarta Sans', system-ui, -apple-system, 'SF Pro Display', 'Inter', sans-serif" font-size="13" font-weight="600" letter-spacing="0.14em" fill="#64748B">
+      PORTFOLIO RISK &amp; RESILIENCE
+    </text>
+  </g>
+</svg>

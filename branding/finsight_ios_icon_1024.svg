@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="100%" height="100%">
+  <defs>
+    <!-- Full-Bleed Deep Navy Background -->
+    <radialGradient id="iosMasterBg" cx="50%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#0E1C3D"/>
+      <stop offset="55%" stop-color="#081024"/>
+      <stop offset="100%" stop-color="#040814"/>
+    </radialGradient>
+    
+    <!-- Signature Fintech Gradient -->
+    <linearGradient id="iosGrad" x1="12%" y1="88%" x2="88%" y2="12%">
+      <stop offset="0%" stop-color="#1D4ED8"/>
+      <stop offset="28%" stop-color="#2563EB"/>
+      <stop offset="68%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+
+    <!-- Breakout Surge Gradient -->
+    <linearGradient id="iosBreakoutGrad" x1="0%" y1="70%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="40%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+
+    <!-- Ambient Illumination Field -->
+    <radialGradient id="iosAmbientGlow" cx="52%" cy="36%" r="55%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.26"/>
+      <stop offset="60%" stop-color="#06B6D4" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Full-bleed background (Square, ready for iOS App Store mask) -->
+  <rect width="1024" height="1024" fill="url(#iosMasterBg)"/>
+
+  <!-- Ambient Light Halo -->
+  <circle cx="560" cy="420" r="380" fill="url(#iosAmbientGlow)"/>
+
+  <!-- Monogram centered at 2x scale (offset X: 512 - 275 = 237, Y: 512 - 264 = 248) -->
+  <g transform="translate(237, 240) scale(2.0)">
+    <!-- 1. The Resilience Spine -->
+    <rect x="0" y="0" width="56" height="264" rx="28" fill="url(#iosGrad)"/>
+
+    <!-- 2. The Support Floor -->
+    <rect x="56" y="120" width="134" height="54" rx="27" fill="url(#iosGrad)"/>
+
+    <!-- 3. The Ascending Growth Trajectory -->
+    <path d="M 56 0 
+             L 130 0 
+             C 154 0 176 -10 192 -28 
+             L 230 -70 
+             C 240 -82 258 -82 268 -70 
+             C 278 -58 276 -40 264 -28 
+             L 226 14 
+             C 210 32 188 44 164 44 
+             L 56 44 Z" 
+          fill="url(#iosBreakoutGrad)"/>
+  </g>
+</svg>
