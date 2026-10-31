@@ -15,8 +15,12 @@ function buildConfig() {
   const config = {
     connectionString: url,
     max: Number(process.env.DB_POOL_MAX || 10),
-    idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 10000),
-    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+    // Keep connections around: on networks whose public IP changes per connection,
+    // fewer new connections means fewer chances of leaving from an IP the
+    // database's allow list doesn't include.
+    idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 120000),
+    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 6000),
+    keepAlive: true,
   };
   // YugabyteDB Aeon requires TLS. DB_SSL=require verifies the server cert,
   // optionally against DB_SSL_ROOT_CERT (path to the cluster's root.crt).
@@ -49,15 +53,34 @@ function getPool() {
   return pool;
 }
 
+// Only the connect step is retried, so a statement never runs twice.
+const CONNECT_ATTEMPTS = () => Math.max(1, Number(process.env.DB_CONNECT_ATTEMPTS || 3));
+const isConnectFailure = (err) => /connection timeout|Connection terminated unexpectedly|ECONNRESET|ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH/i.test(`${err.message} ${err.code || ''}`);
+
+async function connect() {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await getPool().connect();
+    } catch (err) {
+      if (attempt >= CONNECT_ATTEMPTS() || !isConnectFailure(err)) throw err;
+    }
+  }
+}
+
 async function query(text, params) {
-  return getPool().query(text, params);
+  const client = await connect();
+  try {
+    return await client.query(text, params);
+  } finally {
+    client.release();
+  }
 }
 
 // YugabyteDB can raise serialization / restart errors (40001) under contention;
 // retry the whole transaction a few times as Yugabyte recommends.
 async function withTransaction(fn, { retries = 3 } = {}) {
   for (let attempt = 0; ; attempt++) {
-    const client = await getPool().connect();
+    const client = await connect();
     try {
       await client.query('BEGIN');
       const result = await fn(client);
