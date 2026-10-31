@@ -33,6 +33,14 @@ router.post('/login', wrap(async (req, res) => {
   } catch (err) { throw toHttp(err); }
 }));
 
+// GET /api/auth/session — 200 with user or null; lets the web app check
+// sign-in state without producing a 401.
+router.get('/session', wrap(async (req, res) => {
+  const { token } = readToken(req);
+  const user = token ? await authService.verifyToken(token) : null;
+  res.json({ success: true, user });
+}));
+
 // GET /api/auth/me
 router.get('/me', requireAuth, (req, res) => {
   res.json({ success: true, user: req.user });

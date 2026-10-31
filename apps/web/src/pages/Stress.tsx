@@ -195,8 +195,8 @@ export function StressResultView({ r, memberName }: { r: StressResult; memberNam
                 <Tooltip formatter={(v, n) => [inr(Number(v)), n]} labelFormatter={(m) => `Month ${m}`} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)' }} />
                 <Legend />
                 <ReferenceLine y={0} stroke="var(--bad)" strokeDasharray="4 4" />
-                <Area type="monotone" dataKey="semiLiquid" name="Semi-liquid (FDs, investments)" stackId="1" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} />
-                <Area type="monotone" dataKey="cash" name="Liquid cash" stackId="1" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.3} />
+                <Area type="linear" dataKey="semiLiquid" name="Semi-liquid (FDs, investments)" stackId="1" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} isAnimationActive={false} />
+                <Area type="linear" dataKey="cash" name="Liquid cash" stackId="1" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.3} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>

@@ -67,6 +67,8 @@ async function dashboard(familyId, viewerId, scopeInput) {
 /** Stores a snapshot when the score moved (or daily) and explains change vs the previous one. */
 async function recordScore(familyId, viewerId, scope, report) {
   const scopeUser = scope.type === 'individual' ? scope.userId : null;
+  // No records yet: don't store a baseline, or the first real score would show a misleading jump.
+  if (!report.hasData) return { change: { delta: null, changes: [], summary: 'Add records to start tracking your score.' } };
   const { rows } = await db.query(
     `SELECT score, report, created_at FROM score_snapshots
      WHERE family_id = $1 AND viewer_id = $2 AND scope = $3 AND scope_user IS NOT DISTINCT FROM $4

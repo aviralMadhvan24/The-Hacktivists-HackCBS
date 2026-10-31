@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { Button, Card, Field, Notice } from '../components/ui';
@@ -14,7 +15,9 @@ export default function Onboarding() {
   const [token, setToken] = useState(() => new URLSearchParams(window.location.search).get('invite') || '');
   const invites = useQuery({ queryKey: ['my-invites'], queryFn: () => api.get<{ invitations: Invite[] }>('/families/invitations/mine').then((r) => r.invitations) });
 
-  const done = () => qc.invalidateQueries({ queryKey: ['families'] });
+  const nav = useNavigate();
+  // Leave the ?invite= URL so the app shows the family, not this screen again.
+  const done = async () => { await qc.invalidateQueries({ queryKey: ['families'] }); nav('/', { replace: true }); };
   const create = useMutation({ mutationFn: () => api.post('/families', { name }), onSuccess: done });
   const accept = useMutation({ mutationFn: (body: { token?: string; invitationId?: string }) => api.post('/families/invitations/accept', body), onSuccess: done });
 

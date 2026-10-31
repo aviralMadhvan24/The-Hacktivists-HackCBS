@@ -324,12 +324,12 @@ function RecordForm({ entity, item, onDone }: { entity: Entity; item?: any; onDo
           <Field label="Category"><input value={f.category} onChange={(e) => set('category', e.target.value)} required maxLength={60} placeholder={f.direction === 'income' ? 'salary' : 'housing'} /></Field>
           <Field label="Amount (₹)"><input type="number" min={0} step="any" value={f.amount} onChange={(e) => set('amount', e.target.value)} required /></Field>
           <Field label="Frequency"><select value={f.frequency} onChange={(e) => set('frequency', e.target.value)}>{['monthly', 'quarterly', 'half_yearly', 'yearly'].map((k) => <option key={k} value={k}>{label(k)}</option>)}</select></Field>
-          {f.direction === 'expense' && <Field label="Essential?" hint="Essential costs can't be cut in an emergency."><label className="check"><input type="checkbox" checked={Boolean(f.essential)} onChange={(e) => set('essential', e.target.checked)} /> Essential</label></Field>}
+          {f.direction === 'expense' && <Field group label="Essential?" hint="Essential costs can't be cut in an emergency."><label className="check"><input type="checkbox" checked={Boolean(f.essential)} onChange={(e) => set('essential', e.target.checked)} /> Essential</label></Field>}
           <Field label="Starts (optional)"><input type="date" value={f.startsOn || ''} onChange={(e) => set('startsOn', e.target.value)} /></Field>
           <Field label="Ends (optional)"><input type="date" value={f.endsOn || ''} onChange={(e) => set('endsOn', e.target.value)} /></Field>
         </div>
       )}
-      <Field label="Who owns this?" hint="Each owner's share is used for individual views; the family view counts the record once.">
+      <Field group label="Who owns this?" hint="Each owner's share is used for individual views; the family view counts the record once.">
         <OwnersInput members={members} value={owners} onChange={setOwners} />
       </Field>
       <Field label="Visibility">

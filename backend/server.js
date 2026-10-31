@@ -88,7 +88,7 @@ app.use('/api/recovery', requireAuth, require('./routes/recovery'));
 app.use('/api', (req, res) => res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Unknown API route.' }));
 
 // ---- Web app (production build) -----------------------------------------------
-const webDist = process.env.WEB_DIST || path.join(__dirname, '..', 'apps', 'web', 'dist');
+const webDist = path.resolve(process.env.WEB_DIST || path.join(__dirname, '..', 'apps', 'web', 'dist'));
 if (fs.existsSync(path.join(webDist, 'index.html'))) {
   app.use(express.static(webDist, { index: false, maxAge: '1h' }));
   app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(webDist, 'index.html')));

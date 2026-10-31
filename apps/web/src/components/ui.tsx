@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { AlertTriangle, Inbox, Loader2, X } from 'lucide-react';
 import { errorMessage } from '../lib/api';
 
@@ -45,14 +45,36 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
 
-export function Field({ label, hint, error, children }: { label: string; hint?: ReactNode; error?: string; children: ReactNode }) {
+// group: for compound controls (several inputs) — a labelled group instead of a <label>.
+export function Field({ label, hint, error, children, group }: { label: string; hint?: ReactNode; error?: string; children: ReactNode; group?: boolean }) {
+  if (group) {
+    return (
+      <div className="field" role="group" aria-label={label}>
+        <span className="field-label">{label}</span>
+        {children}
+        {hint && !error && <span className="field-hint">{hint}</span>}
+        {error && <span className="field-error">{error}</span>}
+      </div>
+    );
+  }
+  return <LabelledField label={label} hint={hint} error={error}>{children}</LabelledField>;
+}
+
+// Associates the label with its single input via id (not by wrapping), so the
+// accessible name is exactly the label and hints are announced as descriptions.
+function LabelledField({ label, hint, error, children }: { label: string; hint?: ReactNode; error?: string; children: ReactNode }) {
+  const id = useId();
+  const descId = `${id}-desc`;
+  const child = isValidElement<Record<string, unknown>>(children)
+    ? cloneElement(children, { id: (children.props.id as string) || id, 'aria-describedby': hint || error ? descId : undefined, 'aria-invalid': error ? true : undefined })
+    : children;
   return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      {children}
-      {hint && !error && <span className="field-hint">{hint}</span>}
-      {error && <span className="field-error">{error}</span>}
-    </label>
+    <div className="field">
+      <label className="field-label" htmlFor={isValidElement(children) ? ((children.props as { id?: string }).id || id) : undefined}>{label}</label>
+      {child}
+      {hint && !error && <span className="field-hint" id={descId}>{hint}</span>}
+      {error && <span className="field-error" id={descId}>{error}</span>}
+    </div>
   );
 }
 

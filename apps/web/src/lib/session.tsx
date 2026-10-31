@@ -30,7 +30,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const me = useQuery({
     queryKey: ['me'],
-    queryFn: () => api.get<{ user: User }>('/auth/me').then((r) => r.user).catch(() => null),
+    queryFn: () => api.get<{ user: User | null }>('/auth/session').then((r) => r.user),
     staleTime: 60_000,
   });
   const user = me.data ?? null;

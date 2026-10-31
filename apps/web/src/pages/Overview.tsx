@@ -103,7 +103,7 @@ function DashboardView({ d }: { d: Dashboard }) {
                 <XAxis dataKey="name" tick={{ fill: 'var(--text-2)', fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tickFormatter={inrCompact} tick={{ fill: 'var(--text-3)', fontSize: 11 }} axisLine={false} tickLine={false} width={64} />
                 <Tooltip formatter={(v) => inr(Number(v))} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)' }} />
-                <Bar dataKey="value" radius={[6, 6, 0, 0]}>{liquidity.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}</Bar>
+                <Bar dataKey="value" radius={[6, 6, 0, 0]} isAnimationActive={false}>{liquidity.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}</Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -112,7 +112,7 @@ function DashboardView({ d }: { d: Dashboard }) {
           <div className="chart-box" style={{ height: 200 }}>
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={byKind} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2} stroke="var(--surface)">
+                <Pie data={byKind} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2} stroke="var(--surface)" isAnimationActive={false}>
                   {byKind.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip formatter={(v) => inr(Number(v))} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)' }} />
