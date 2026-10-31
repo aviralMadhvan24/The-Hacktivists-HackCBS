@@ -34,7 +34,9 @@ async function post(url, headers, body, provider, timeoutMs = TIMEOUT_MS) {
   }
   if (!res.ok) {
     const text = (await res.text()).slice(0, 500);
+    const retry = text.match(/"retryDelay":s*"(d+)s"/);
     throw Object.assign(new Error(`${provider} API error (${res.status}): ${text}`), {
+      retryAfterMs: retry ? Number(retry[1]) * 1000 : null,
       code: res.status === 429 ? 'LLM_RATE_LIMITED' : 'LLM_UNAVAILABLE',
       retryable: [404, 429, 500, 502, 503, 504].includes(res.status),
     });
@@ -47,10 +49,11 @@ async function post(url, headers, body, provider, timeoutMs = TIMEOUT_MS) {
 // is skipped for a few minutes so later requests don't wait on it again.
 function geminiModels() {
   const primary = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
-  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-3.5-flash').split(',').map((s) => s.trim()).filter(Boolean);
+  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-flash-lite-latest,gemini-flash-latest').split(',').map((s) => s.trim()).filter(Boolean);
   return [...new Set([primary, ...fallbacks])];
 }
 const unhealthyUntil = new Map();
+const noMinimalThinking = new Set();
 const COOLDOWN_MS = 5 * 60 * 1000;
 
 async function callGemini(prompt, { system, temperature, fast, timeoutMs }) {
@@ -68,15 +71,23 @@ async function callGemini(prompt, { system, temperature, fast, timeoutMs }) {
       generationConfig: { responseMimeType: 'application/json', temperature },
     };
     // Gemini 3 models accept a thinking level; minimal is much faster for short, grounded replies.
-    if (fast && /gemini-3|latest/.test(model)) body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
+    // Some models reject it (400), so we remember those and send no thinking config to them.
+    if (fast && /gemini-3|latest/.test(model) && !noMinimalThinking.has(model)) body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
     if (system) body.systemInstruction = { parts: [{ text: system }] };
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     let data;
     try {
-      data = await post(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-        { 'x-goog-api-key': process.env.GEMINI_API_KEY }, body, 'Gemini', perCall);
+      try {
+        data = await post(url, { 'x-goog-api-key': process.env.GEMINI_API_KEY }, body, 'Gemini', perCall);
+      } catch (err) {
+        if (!(/\(400\)/.test(err.message) && /thinking/i.test(err.message) && body.generationConfig.thinkingConfig)) throw err;
+        noMinimalThinking.add(model);
+        delete body.generationConfig.thinkingConfig;
+        data = await post(url, { 'x-goog-api-key': process.env.GEMINI_API_KEY }, body, 'Gemini', perCall);
+      }
     } catch (err) {
       lastErr = err;
-      if (err.retryable) { unhealthyUntil.set(model, Date.now() + COOLDOWN_MS); continue; }
+      if (err.retryable) { unhealthyUntil.set(model, Date.now() + Math.max(COOLDOWN_MS, err.retryAfterMs || 0)); continue; }
       throw err;
     }
     unhealthyUntil.delete(model);
