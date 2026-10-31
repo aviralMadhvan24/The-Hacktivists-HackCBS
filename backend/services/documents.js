@@ -142,8 +142,21 @@ async function refresh(row, b) {
   }
   if (row.status === 'indexed' && !row.meko_document_id && row.fingerprint) {
     const r = await meko.callTool('knowledgebase_search', { query: row.fingerprint, conversation_id: b.conversation_id, datapack_id: row.meko_datapack, limit: 10 });
-    const hit = (r?.results || []).find((h) => norm(h.chunk_text).includes(row.fingerprint));
-    if (hit?.document_id) {
+    const hits = (r?.results || []).filter((h) => h.document_id);
+    // Document ids already matched to other uploads in this datapack can't be this one.
+    const taken = new Set((await db.query('SELECT meko_document_id FROM documents WHERE meko_datapack = $1 AND meko_document_id IS NOT NULL', [row.meko_datapack])).rows.map((x) => x.meko_document_id));
+    const free = hits.filter((h) => !taken.has(h.document_id));
+    // Meko's PDF text differs from ours (word order, spacing), so match on word overlap.
+    const words = new Set(row.fingerprint.split(' '));
+    const overlap = (h) => { const c = new Set(norm(h.chunk_text).split(' ')); let n = 0; for (const w of words) if (c.has(w)) n++; return n / words.size; };
+    let hit = free.map((h) => ({ h, s: overlap(h) })).sort((x, y) => y.s - x.s).find((x) => x.s >= 0.7)?.h;
+    // In the person's own datapack every document is theirs: one unclaimed candidate is it.
+    if (!hit && b.dedicated) {
+      const ids = [...new Set(free.map((h) => h.document_id))];
+      const unresolved = (await db.query("SELECT count(*)::int n FROM documents WHERE meko_datapack = $1 AND meko_document_id IS NULL AND deleted_at IS NULL AND status = 'indexed'", [row.meko_datapack])).rows[0].n;
+      if (ids.length === 1 && unresolved === 1) hit = free[0];
+    }
+    if (hit) {
       await db.query('UPDATE documents SET meko_document_id = $2 WHERE id = $1', [row.id, hit.document_id]);
       row.meko_document_id = hit.document_id;
     }
@@ -184,10 +197,15 @@ async function searchDocuments(userId, query, limit = 5) {
   if (!docs.length) return [];
   for (const d of docs) await refresh(d, b).catch(() => {});
   const mine = new Map(docs.filter((d) => d.meko_document_id).map((d) => [d.meko_document_id, d]));
-  if (!mine.size) return [];
+  // Own datapack: everything in its knowledge base is the person's. Shared datapack:
+  // only documents we could match to this person's uploads.
+  if (!b.dedicated && !mine.size) return [];
   const r = await meko.callTool('knowledgebase_search', { query: String(query).slice(0, 400), conversation_id: b.conversation_id, datapack_id: b.datapack_id, limit: Math.min(20, limit * 3) });
-  return (r?.results || []).filter((h) => mine.has(h.document_id)).slice(0, limit)
-    .map((h) => ({ document: KIND_LABEL[mine.get(h.document_id).kind], filename: mine.get(h.document_id).filename, text: String(h.chunk_text || '').slice(0, 1200) }));
+  return (r?.results || []).filter((h) => b.dedicated || mine.has(h.document_id)).slice(0, limit)
+    .map((h) => {
+      const d = mine.get(h.document_id);
+      return { document: d ? KIND_LABEL[d.kind] : 'Your document', filename: d?.filename || null, text: String(h.chunk_text || '').slice(0, 1200) };
+    });
 }
 
 // ---- Apply suggestions -----------------------------------------------------------------------
