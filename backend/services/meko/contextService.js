@@ -59,11 +59,33 @@ function pickId(data, keys) {
   return null;
 }
 
+/**
+ * Live Meko requires a conversation_id even for account-level calls such as
+ * datapack_create / datapack_delete. We keep one "control" conversation in the
+ * account's default datapack (conversation_create without datapack_id resolves
+ * to the default) and reuse it; its id is stored in meko_settings.
+ */
+let controlConversation = null;
+async function controlConversationId() {
+  if (controlConversation) return controlConversation;
+  const { rows } = await db.query("SELECT value FROM meko_settings WHERE key = 'control_conversation_id'");
+  if (rows[0]) { controlConversation = rows[0].value; return controlConversation; }
+  const conv = await meko.callTool('conversation_create', { agent_id: AGENT_ID, title: 'LiquidityOS backend (control)' });
+  const id = pickId(conv, ['id', 'conversation_id']);
+  if (!id) throw new meko.MekoError('Meko did not return a conversation id for the control conversation.', 'MEKO_BAD_RESPONSE');
+  await db.query(
+    `INSERT INTO meko_settings (key, value) VALUES ('control_conversation_id', $1)
+     ON CONFLICT (key) DO NOTHING`, [id]);
+  const again = await db.query("SELECT value FROM meko_settings WHERE key = 'control_conversation_id'");
+  controlConversation = again.rows[0].value;
+  return controlConversation;
+}
+
 async function binding(scopeType, scopeId, { create = true } = {}) {
   const { rows } = await db.query('SELECT * FROM meko_bindings WHERE scope_type = $1 AND scope_id = $2', [scopeType, scopeId]);
   if (rows[0] || !create) return rows[0] || null;
   const name = `${PREFIX}-${scopeType}-${scopeId}`;
-  const dp = await meko.callTool('datapack_create', { name });
+  const dp = await meko.callTool('datapack_create', { name, conversation_id: await controlConversationId() });
   const datapackId = pickId(dp, ['datapack_id', 'id']);
   if (!datapackId) throw new meko.MekoError('Meko did not return a datapack id.', 'MEKO_BAD_RESPONSE');
   const conv = await meko.callTool('conversation_create', { datapack_id: datapackId, agent_id: AGENT_ID, title: `LiquidityOS ${scopeType} context` });
@@ -290,7 +312,7 @@ async function deleteAllForUser(userId) {
   if (b) {
     if (!meko.isEnabled()) return { ok: false, required: true, error: 'Meko is disabled, so your private Meko datapack cannot be deleted yet' };
     try {
-      await meko.callTool('datapack_delete', { datapack_id: b.datapack_id });
+      await meko.callTool('datapack_delete', { datapack_id: b.datapack_id, conversation_id: await controlConversationId() });
     } catch (err) {
       return { ok: false, required: true, error: err.message };
     }
@@ -306,7 +328,7 @@ async function deleteFamilyContext(familyId) {
   if (!b) return { ok: true, datapackDeleted: false };
   if (!meko.isEnabled()) return { ok: false, error: 'Meko disabled' };
   try {
-    await meko.callTool('datapack_delete', { datapack_id: b.datapack_id });
+    await meko.callTool('datapack_delete', { datapack_id: b.datapack_id, conversation_id: await controlConversationId() });
     await db.query("DELETE FROM meko_bindings WHERE scope_type = 'family' AND scope_id = $1", [familyId]);
     return { ok: true, datapackDeleted: true };
   } catch (err) {

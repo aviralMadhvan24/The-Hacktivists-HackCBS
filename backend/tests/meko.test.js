@@ -49,7 +49,7 @@ test('shared and private memories go to separate datapacks', async () => {
   raviPrivateId = (await ctx(ravi, 'POST', '', { kind: 'preference', title: 'Ravi risk note', body: 'Private: Ravi is comfortable with small-cap stocks up to 10%.', private: true })).body.memory.id;
 
   const dps = [...fake.state.datapacks.values()];
-  assert.equal(dps.length, 3); // family + two users
+  assert.equal(dps.length, 4); // account default + family + two users
   const familyDp = dps.find((d) => d.name.includes('-family-'));
   assert.equal(familyDp.memories.size, 1);
 });

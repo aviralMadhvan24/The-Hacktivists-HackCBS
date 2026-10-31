@@ -10,6 +10,9 @@ const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/ser
 
 function createFakeMeko({ apiKey = 'mko_test_key_123456789' } = {}) {
   const state = { datapacks: new Map(), conversations: new Map(), calls: [] };
+  const DEFAULT_DP = randomUUID();
+  state.datapacks.set(DEFAULT_DP, { id: DEFAULT_DP, name: 'meko_default_datapack', memories: new Map() });
+  const needConv = (a) => (!a.conversation_id || !state.conversations.has(a.conversation_id)) && err('conversation_id_required', 'Pass conversation_id from the stored chat (conversation_create / add_message).');
   const wrap = (obj) => ({ content: [{ type: 'text', text: JSON.stringify({ result: JSON.stringify(obj) }) }] });
   const err = (code, detail) => wrap({ error: code, detail });
 
@@ -18,21 +21,22 @@ function createFakeMeko({ apiKey = 'mko_test_key_123456789' } = {}) {
     const log = (name, args) => state.calls.push({ name, args });
     server.tool('datapack_create', { name: z.string(), conversation_id: z.string().optional() }, async (a) => {
       log('datapack_create', a);
+      if (needConv(a)) return needConv(a);
       if ([...state.datapacks.values()].some((d) => d.name === a.name)) return err('datapack_exists', 'name must be unique');
       const id = randomUUID();
       state.datapacks.set(id, { id, name: a.name, memories: new Map() });
       return wrap({ datapack_id: id, datapack_name: a.name });
     });
-    server.tool('datapack_delete', { datapack_id: z.string() }, async (a) => {
+    server.tool('datapack_delete', { datapack_id: z.string(), conversation_id: z.string().optional() }, async (a) => {
       log('datapack_delete', a);
+      if (needConv(a)) return needConv(a);
       if (!state.datapacks.delete(a.datapack_id)) return err('not_found', 'datapack not found');
       return wrap({ deleted: true });
     });
     server.tool('conversation_create', { datapack_id: z.string().optional(), agent_id: z.string().optional(), title: z.string().optional() }, async (a) => {
       log('conversation_create', a);
-      if (!a.datapack_id) return err('datapack_id_required', 'missing');
       const id = randomUUID().replace(/-/g, '');
-      state.conversations.set(id, a.datapack_id);
+      state.conversations.set(id, a.datapack_id || DEFAULT_DP); // no datapack → account default, like live Meko
       return wrap({ id, agent_id: a.agent_id, title: a.title });
     });
     server.tool('memory_add', { text: z.string(), conversation_id: z.string(), datapack_id: z.string().optional(), agent_id: z.string().optional(), metadata: z.string().optional() }, async (a) => {
