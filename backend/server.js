@@ -27,6 +27,7 @@ app.use(helmet({
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:'],
       connectSrc: ["'self'"],
+      mediaSrc: ["'self'", 'blob:'],
       frameAncestors: ["'none'"],
     },
   },
@@ -82,6 +83,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/zerodha', require('./routes/zerodha')); // applies auth per route (OAuth callback is public)
 app.use('/api/me', requireAuth, require('./routes/me'));
 app.use('/api/families', requireAuth, require('./routes/families'));
+app.use('/api/voice', requireAuth, require('./routes/voice'));
 app.use('/api/market', requireAuth, require('./routes/market'));
 app.use('/api/concall', requireAuth, require('./routes/concall'));
 app.use('/api/recovery', requireAuth, require('./routes/recovery'));

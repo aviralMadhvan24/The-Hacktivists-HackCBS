@@ -37,6 +37,8 @@ export default function Assistant() {
   const [lang, setLang] = useState<VoiceLang>(() => (readStored('fs.voiceLang', 'en-IN') as VoiceLang));
   const [voiceOn, setVoiceOn] = useState(() => readStored('fs.voiceReplies', '1') === '1');
   const [handsFree, setHandsFree] = useState(false);
+  const [voiceStyle, setVoiceStyle] = useState<'natural' | 'browser'>(() => (readStored('fs.voiceStyle', 'natural') === 'browser' ? 'browser' : 'natural'));
+  useEffect(() => writeStored('fs.voiceStyle', voiceStyle), [voiceStyle]);
   const [caption, setCaption] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -63,7 +65,7 @@ export default function Assistant() {
       setMessages((m) => [...m, { role: 'assistant', content: r.answer, tools: r.toolsUsed, followUps: r.followUps }]);
       setCaption(r.answer);
       if (voiceOn && voice.support.speak) {
-        await voice.speak(r.answer, lang);
+        await voice.speak(r.answer, lang, voiceStyle);
         if (handsFree && vars.spoken) startListening();
       }
     },
@@ -143,6 +145,10 @@ export default function Assistant() {
                 <button role="radio" aria-checked={lang === 'en-IN'} className={`tab ${lang === 'en-IN' ? 'active' : ''}`} onClick={() => setLang('en-IN')}>English / Hinglish</button>
                 <button role="radio" aria-checked={lang === 'hi-IN'} className={`tab ${lang === 'hi-IN' ? 'active' : ''}`} onClick={() => setLang('hi-IN')}>हिन्दी</button>
               </div>
+              <div className="tabs" role="radiogroup" aria-label="Voice style">
+                <button role="radio" aria-checked={voiceStyle === 'natural'} className={`tab ${voiceStyle === 'natural' ? 'active' : ''}`} onClick={() => setVoiceStyle('natural')}>Natural voice (AI)</button>
+                <button role="radio" aria-checked={voiceStyle === 'browser'} className={`tab ${voiceStyle === 'browser' ? 'active' : ''}`} onClick={() => setVoiceStyle('browser')}>Browser voice</button>
+              </div>
               <label className="check small"><input type="checkbox" checked={voiceOn} onChange={(e) => { setVoiceOn(e.target.checked); if (!e.target.checked) voice.stopSpeaking(); }} /> {voiceOn ? <Volume2 size={15} /> : <VolumeX size={15} />} Speak replies</label>
               <label className="check small"><input type="checkbox" checked={handsFree} onChange={(e) => setHandsFree(e.target.checked)} /> Hands-free (listen again after each reply)</label>
             </div>
@@ -179,7 +185,7 @@ export default function Assistant() {
                     )}
                     <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
                     {m.role === 'assistant' && !m.error && voice.support.speak && (
-                      <button className="btn btn-ghost btn-sm" style={{ marginTop: 6, paddingLeft: 0 }} onClick={() => { setCaption(m.content); voice.speak(m.content, lang); }}><Volume2 size={14} /> Listen</button>
+                      <button className="btn btn-ghost btn-sm" style={{ marginTop: 6, paddingLeft: 0 }} onClick={() => { setCaption(m.content); voice.speak(m.content, lang, voiceStyle); }}><Volume2 size={14} /> Listen</button>
                     )}
                     {m.followUps && m.followUps.length > 0 && i === messages.length - 1 && (
                       <div className="chip-row" style={{ marginTop: 10 }}>

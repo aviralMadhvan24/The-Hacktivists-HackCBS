@@ -28,12 +28,12 @@ function forSpeech(text: string) {
 
 function pickVoice(lang: VoiceLang): SpeechSynthesisVoice | null {
   const voices = window.speechSynthesis.getVoices();
-  const prefs = lang === 'hi-IN'
-    ? [/hi-IN/i, /hindi/i, /en-IN/i]
-    : [/en-IN/i, /India/i, /hi-IN/i, /en-GB/i, /en-US/i];
-  for (const p of prefs) {
-    const v = voices.find((x) => p.test(x.lang) || p.test(x.name));
-    if (v) return v;
+  const langs = lang === 'hi-IN' ? [/^hi/i, /en-IN/i] : [/en-IN/i, /^hi/i, /en-GB/i, /en-US/i];
+  // Neural voices (Edge "Online (Natural)", Google voices) sound far less robotic.
+  const quality = (v: SpeechSynthesisVoice) => (/natural|neural|online/i.test(v.name) ? 3 : /google/i.test(v.name) ? 2 : v.localService ? 0 : 1);
+  for (const l of langs) {
+    const matches = voices.filter((v) => l.test(v.lang)).sort((a, b) => quality(b) - quality(a));
+    if (matches.length) return matches[0];
   }
   return voices[0] || null;
 }
@@ -47,6 +47,7 @@ export function useVoice() {
   const rec = useRef<Rec | null>(null);
   const audio = useRef<{ ctx: AudioContext; stream: MediaStream; raf: number } | null>(null);
   const speakToken = useRef(0);
+  const stopPlayerRef = useRef<(() => void) | null>(null);
   const decay = useRef<number | null>(null);
 
   // Load voices (Chrome populates them asynchronously).
@@ -91,6 +92,7 @@ export function useVoice() {
 
   const stopSpeaking = useCallback(() => {
     speakToken.current++;
+    stopPlayerRef.current?.();
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     setSpeaking(false);
     levelRef.current = 0;
@@ -137,11 +139,97 @@ export function useVoice() {
 
   const stopListening = useCallback(() => { rec.current?.stop(); }, []);
 
-  /** Speaks text sentence by sentence (avoids Chrome's long-utterance cut-off). */
-  const speak = useCallback((text: string, lang: VoiceLang) => new Promise<void>((resolve) => {
-    if (!('speechSynthesis' in window)) { resolve(); return; }
+  const player = useRef<{ audio: HTMLAudioElement; ctx: AudioContext; raf: number; url: string } | null>(null);
+
+  const stopPlayer = useCallback(() => {
+    const p = player.current;
+    if (!p) return;
+    cancelAnimationFrame(p.raf);
+    p.audio.pause();
+    URL.revokeObjectURL(p.url);
+    p.ctx.close().catch(() => {});
+    player.current = null;
+  }, []);
+
+  /** Splits speech into a short first chunk (fast start) and larger later chunks. */
+  const chunk = (text: string) => {
+    const sentences = text.match(/[^.!?।]+[.!?।]?/g)?.map((x) => x.trim()).filter(Boolean) || [text];
+    const out: string[] = [];
+    let cur = '';
+    for (const sen of sentences) {
+      const limit = out.length === 0 ? 140 : 420;
+      if (cur && (cur + ' ' + sen).length > limit) { out.push(cur); cur = sen; } else cur = cur ? cur + ' ' + sen : sen;
+    }
+    if (cur) out.push(cur);
+    return out;
+  };
+
+  const fetchTts = async (text: string, lang: VoiceLang): Promise<Blob | null> => {
+    try {
+      const r = await fetch('/api/voice/tts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-LOS-CSRF': '1' }, credentials: 'same-origin', body: JSON.stringify({ text: text.slice(0, 1500), lang }) });
+      return r.ok ? await r.blob() : null;
+    } catch { return null; }
+  };
+
+  /** Plays one audio blob, driving the orb level from the real waveform. */
+  const playBlob = (blob: Blob) => new Promise<boolean>((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    const ctx = new AudioContext();
+    const an = ctx.createAnalyser();
+    an.fftSize = 512;
+    ctx.createMediaElementSource(audio).connect(an);
+    an.connect(ctx.destination);
+    const buf = new Uint8Array(an.fftSize);
+    const tick = () => {
+      an.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      levelRef.current = Math.min(1, Math.sqrt(sum / buf.length) * 4);
+      if (player.current) player.current.raf = requestAnimationFrame(tick);
+    };
+    player.current = { audio, ctx, url, raf: 0 };
+    audio.onended = () => { stopPlayer(); levelRef.current = 0; resolve(true); };
+    audio.onerror = () => { stopPlayer(); resolve(false); };
+    audio.play().then(() => { if (player.current) player.current.raf = requestAnimationFrame(tick); }).catch(() => { stopPlayer(); resolve(false); });
+  });
+
+  /**
+   * Natural voice (Gemini TTS), chunked: the next chunk is generated while the
+   * current one plays. Returns the text it could not speak ('' when all done),
+   * or null if nothing could be spoken naturally.
+   */
+  const speakNatural = useCallback(async (text: string, lang: VoiceLang, token: number): Promise<string | null> => {
+    const parts = chunk(text);
+    let pending = fetchTts(parts[0], lang);
+    for (let i = 0; i < parts.length; i++) {
+      const blob = await pending;
+      if (token !== speakToken.current) return '';
+      if (!blob) return i === 0 ? null : parts.slice(i).join(' ');
+      if (i + 1 < parts.length) pending = fetchTts(parts[i + 1], lang);
+      const ok = await playBlob(blob);
+      if (token !== speakToken.current) return '';
+      if (!ok) return i === 0 ? null : parts.slice(i).join(' ');
+    }
+    return '';
+  }, [stopPlayer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Speaks text: natural voice first (if enabled), else the browser voice sentence by sentence. */
+  const speak = useCallback(async (text: string, lang: VoiceLang, mode: 'natural' | 'browser' = 'natural') => {
     stopSpeaking();
     const token = ++speakToken.current;
+    if (mode === 'natural') {
+      setSpeaking(true);
+      const rest = await speakNatural(forSpeech(text), lang, token);
+      if (token !== speakToken.current) return;
+      if (rest === '') { setSpeaking(false); return; }
+      if (rest !== null) text = rest; // finish the remainder with the browser voice
+    }
+    await speakBrowser(text, lang, token);
+  }, [speakNatural]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const speakBrowser = (text: string, lang: VoiceLang, token: number) => new Promise<void>((resolve) => {
+    if (!('speechSynthesis' in window)) { setSpeaking(false); resolve(); return; }
     const parts = forSpeech(text).match(/[^.!?।]+[.!?।]?/g)?.map((s) => s.trim()).filter(Boolean) || [];
     const voice = pickVoice(lang);
     setSpeaking(true);
@@ -165,8 +253,9 @@ export function useVoice() {
       window.speechSynthesis.speak(u);
     };
     next();
-  }), [stopSpeaking]);
+  });
 
+  stopPlayerRef.current = stopPlayer;
   useEffect(() => () => { rec.current?.abort?.(); stopMeter(); stopSpeaking(); }, [stopMeter, stopSpeaking]);
 
   return { levelRef, listening, speaking, interim, error, setError, listen, stopListening, speak, stopSpeaking, support: speechSupport() };
