@@ -29,7 +29,12 @@ const KINDS = ['goal', 'preference', 'decision', 'investment_reasoning', 'stress
 //   the viewer may see are dropped, and only our own canonical text is returned.
 // 'datapack': one datapack per family and per user (stronger separation; needs a
 //   Meko plan without the datapack cap).
-const ISOLATION = () => (process.env.MEKO_ISOLATION === 'datapack' ? 'datapack' : 'shared');
+// 'family': one datapack per family, and inside it one conversation per member.
+//   Each memory is written into its author's conversation. The first family reuses
+//   MEKO_DATAPACK_ID (no new datapack); further families get their own datapack.
+//   Private memories sit in their owner's conversation and are still filtered by
+//   the index, as in every mode.
+const ISOLATION = () => (['datapack', 'family'].includes(process.env.MEKO_ISOLATION) ? process.env.MEKO_ISOLATION : 'shared');
 
 // ---- Sanitisation -------------------------------------------------------------
 const REDACTIONS = [
@@ -121,9 +126,70 @@ async function appBinding({ create = true } = {}) {
   return { datapack_id: dp, conversation_id: again.rows[0].value };
 }
 
+// ---- Family mode: one datapack per family, one conversation per member -----------
+const memberKey = (familyId, userId) => `member_conversation:${familyId}:${userId}`;
+
+async function createMemberConversation(datapackId, familyId, userId) {
+  const { rows } = await db.query(
+    'SELECT (SELECT name FROM users WHERE id = $2) AS member, (SELECT name FROM families WHERE id = $1) AS family', [familyId, userId]);
+  const conv = await meko.callTool('conversation_create', {
+    datapack_id: datapackId, agent_id: AGENT_ID,
+    title: `${rows[0]?.member || 'Member'} · ${rows[0]?.family || 'Family'}`,
+    metadata: JSON.stringify({ app: 'finsight', family_id: familyId, user_id: userId }),
+  });
+  const id = pickId(conv, ['id', 'conversation_id']);
+  if (!id) throw new meko.MekoError('Meko did not return a conversation id.', 'MEKO_BAD_RESPONSE');
+  return id;
+}
+
+/** The family's datapack binding; created (with the creator's conversation) on first use. */
+async function familyBinding(familyId, actorId, { create = true } = {}) {
+  const found = await db.query("SELECT * FROM meko_bindings WHERE scope_type = 'family' AND scope_id = $1", [familyId]);
+  if (found.rows[0] || !create) return found.rows[0] || null;
+  const configured = process.env.MEKO_DATAPACK_ID || null;
+  const taken = configured
+    ? (await db.query("SELECT 1 FROM meko_bindings WHERE scope_type = 'family' AND datapack_id = $1", [configured])).rowCount > 0
+    : true;
+  let datapackId; let name;
+  if (!taken) { datapackId = configured; name = 'MEKO_DATAPACK_ID (configured)'; } else {
+    name = `${PREFIX}-family-${familyId}`;
+    const dp = await withControlConversation((cid) => meko.callTool('datapack_create', { name, conversation_id: cid }));
+    datapackId = pickId(dp, ['datapack_id', 'id']);
+    if (!datapackId) throw new meko.MekoError('Meko did not return a datapack id.', 'MEKO_BAD_RESPONSE');
+  }
+  const conversationId = await createMemberConversation(datapackId, familyId, actorId);
+  await db.query(
+    `INSERT INTO meko_bindings (scope_type, scope_id, datapack_id, datapack_name, conversation_id) VALUES ('family',$1,$2,$3,$4)
+     ON CONFLICT (scope_type, scope_id) DO NOTHING`, [familyId, datapackId, name, conversationId]);
+  await db.query('INSERT INTO meko_settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING', [memberKey(familyId, actorId), conversationId]);
+  return (await db.query("SELECT * FROM meko_bindings WHERE scope_type = 'family' AND scope_id = $1", [familyId])).rows[0];
+}
+
+/** { datapack_id, conversation_id } for a member of a family. */
+async function memberBinding(familyId, userId, { create = true } = {}) {
+  const fam = await familyBinding(familyId, userId, { create });
+  if (!fam) return null;
+  const key = memberKey(familyId, userId);
+  const { rows } = await db.query('SELECT value FROM meko_settings WHERE key = $1', [key]);
+  if (rows[0]) return { datapack_id: fam.datapack_id, conversation_id: rows[0].value };
+  // Without create (search/delete), fall back to the family's first conversation for tracing.
+  if (!create) return { datapack_id: fam.datapack_id, conversation_id: fam.conversation_id };
+  const id = await createMemberConversation(fam.datapack_id, familyId, userId);
+  await db.query('INSERT INTO meko_settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING', [key, id]);
+  const again = await db.query('SELECT value FROM meko_settings WHERE key = $1', [key]);
+  return { datapack_id: fam.datapack_id, conversation_id: again.rows[0].value };
+}
+
+/** Lists a family's member conversations: [{ userId, conversationId }]. */
+async function memberConversations(familyId) {
+  const { rows } = await db.query('SELECT key, value FROM meko_settings WHERE key LIKE $1', [`member_conversation:${familyId}:%`]);
+  return rows.map((r) => ({ userId: r.key.split(':')[2], conversationId: r.value }));
+}
+
 /** Where a memory row lives in Meko. */
 async function bindingForRow(row, opts) {
   if (ISOLATION() === 'shared') return appBinding(opts);
+  if (ISOLATION() === 'family') return memberBinding(row.family_id, row.created_by, opts);
   return row.owner_user_id ? binding('user', row.owner_user_id, opts) : binding('family', row.family_id, opts);
 }
 
@@ -268,11 +334,15 @@ async function search(familyId, viewerId, query, { limit = 8, kinds } = {}) {
 
   if (meko.isEnabled()) {
     try {
-      const scopes = ISOLATION() === 'shared' ? [['app']] : [['family', familyId], ['user', viewerId]];
+      const mode = ISOLATION();
+      // family mode: the datapack holds only this family, so one search covers every member's conversation.
+      const scopes = mode === 'shared' ? [['app']] : mode === 'family' ? [['member', familyId]] : [['family', familyId], ['user', viewerId]];
       const seen = new Set();
       const results = [];
       for (const [type, id] of scopes) {
-        const b = type === 'app' ? await appBinding({ create: false }) : await binding(type, id, { create: false });
+        const b = type === 'app' ? await appBinding({ create: false })
+          : type === 'member' ? await memberBinding(id, viewerId, { create: false })
+            : await binding(type, id, { create: false });
         if (!b) continue;
         const res = await meko.callTool('memory_search', { query: q, conversation_id: b.conversation_id, ...withDatapack(b), agent_id: AGENT_ID, limit: Math.min(50, limit * (ISOLATION() === 'shared' ? 6 : 3)) });
         for (const m of collectMemories(res)) {
@@ -370,7 +440,7 @@ async function deleteMemoriesIndividually(rows) {
 
 async function deleteAllForUser(userId) {
   const { rows } = await db.query("SELECT * FROM context_memories WHERE owner_user_id = $1 AND status <> 'deleted'", [userId]);
-  if (ISOLATION() === 'shared') return deleteMemoriesIndividually(rows);
+  if (ISOLATION() === 'shared' || ISOLATION() === 'family') return deleteMemoriesIndividually(rows);
   const b = await binding('user', userId, { create: false });
   if (b) {
     if (!meko.isEnabled()) return { ok: false, required: true, error: 'Meko is disabled, so your private Meko datapack cannot be deleted yet' };
@@ -391,6 +461,7 @@ async function deleteFamilyContext(familyId) {
     const { rows } = await db.query("SELECT * FROM context_memories WHERE family_id = $1 AND status <> 'deleted'", [familyId]);
     return deleteMemoriesIndividually(rows);
   }
+  if (ISOLATION() === 'family') return deleteFamilyDatapack(familyId);
   const b = await binding('family', familyId, { create: false });
   if (!b) return { ok: true, datapackDeleted: false };
   if (!meko.isEnabled()) return { ok: false, error: 'Meko disabled' };
@@ -403,7 +474,39 @@ async function deleteFamilyContext(familyId) {
   }
 }
 
+/**
+ * Family mode deletion. A datapack we created is deleted whole. The configured
+ * MEKO_DATAPACK_ID is never deleted: its memories and member conversations are
+ * removed one by one, so the datapack can be reused.
+ */
+async function deleteFamilyDatapack(familyId) {
+  const fam = await familyBinding(familyId, null, { create: false });
+  const { rows } = await db.query("SELECT * FROM context_memories WHERE family_id = $1 AND status <> 'deleted'", [familyId]);
+  if (!fam) return deleteMemoriesIndividually(rows);
+  if (!meko.isEnabled()) return { ok: false, error: 'Meko disabled' };
+  const forget = async () => {
+    await db.query('DELETE FROM meko_settings WHERE key LIKE $1', [`member_conversation:${familyId}:%`]);
+    await db.query("DELETE FROM meko_bindings WHERE scope_type = 'family' AND scope_id = $1", [familyId]);
+  };
+  try {
+    if (fam.datapack_id === process.env.MEKO_DATAPACK_ID) {
+      const r = await deleteMemoriesIndividually(rows);
+      if (!r.ok) return r;
+      for (const c of await memberConversations(familyId)) {
+        try { await meko.callTool('conversation_delete', { conversation_id: c.conversationId, datapack_id: fam.datapack_id, agent_id: AGENT_ID }); } catch (_) { /* best effort */ }
+      }
+      await forget();
+      return { ok: true, datapackDeleted: false, memoriesDeleted: rows.length };
+    }
+    await withControlConversation((cid) => meko.callTool('datapack_delete', { datapack_id: fam.datapack_id, conversation_id: cid }));
+    await forget();
+    return { ok: true, datapackDeleted: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 /** Test hook: forget the in-process control conversation id. */
 function resetControlCache() { controlConversation = null; }
 
-module.exports = { resetControlCache, add, list, search, remove, correct, resync, deleteAllForUser, deleteFamilyContext, sanitise, collectMemories, hasConsent, KINDS };
+module.exports = { resetControlCache, memberConversations, add, list, search, remove, correct, resync, deleteAllForUser, deleteFamilyContext, sanitise, collectMemories, hasConsent, KINDS };

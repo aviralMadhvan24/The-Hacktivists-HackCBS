@@ -28,6 +28,7 @@ With `MEKO_ENABLED=false` (default) everything still works: memories are saved t
 |---|---|---|
 | `shared` (default) | One datapack: `MEKO_DATAPACK_ID`, or the account's default datapack | Meko free tier, which caps the number of datapacks (we hit `FREE_TIER_DATAPACK_LIMIT` at 4) |
 | `datapack` | One datapack per family and one per user | Paid Meko plans; strongest separation |
+| `family` (used for the demo) | One datapack per family (the first family uses `MEKO_DATAPACK_ID`, so no new datapack), and inside it **one conversation per member**, titled "Member · Family". Each memory is written to its author's conversation, so Meko can list or filter (`run_id`) one member's memories. Verified live: each member conversation returned exactly that member's memories. | One family per datapack with per-member separation; fits the free tier for a single demo family |
 
 In shared mode isolation is enforced entirely by the index below, and search results return only our own canonical text (never Meko's stored text), so even if Meko merges or links memories internally, no other family's or member's words can surface. Tested in `backend/tests/meko-shared.test.js`.
 

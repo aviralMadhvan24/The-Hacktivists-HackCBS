@@ -33,10 +33,11 @@ function createFakeMeko({ apiKey = 'mko_test_key_123456789' } = {}) {
       if (!state.datapacks.delete(a.datapack_id)) return err('not_found', 'datapack not found');
       return wrap({ deleted: true });
     });
-    server.tool('conversation_create', { datapack_id: z.string().optional(), agent_id: z.string().optional(), title: z.string().optional() }, async (a) => {
+    server.tool('conversation_create', { datapack_id: z.string().optional(), agent_id: z.string().optional(), title: z.string().optional(), metadata: z.string().optional() }, async (a) => {
       log('conversation_create', a);
       const id = randomUUID().replace(/-/g, '');
       state.conversations.set(id, a.datapack_id || DEFAULT_DP); // no datapack → account default, like live Meko
+      (state.titles ||= new Map()).set(id, a.title || null);
       return wrap({ id, agent_id: a.agent_id, title: a.title });
     });
     server.tool('memory_add', { text: z.string(), conversation_id: z.string(), datapack_id: z.string().optional(), agent_id: z.string().optional(), metadata: z.string().optional() }, async (a) => {
@@ -44,7 +45,7 @@ function createFakeMeko({ apiKey = 'mko_test_key_123456789' } = {}) {
       const dp = state.datapacks.get(a.datapack_id || state.conversations.get(a.conversation_id));
       if (!dp) return err('datapack_not_found', a.datapack_id);
       const id = randomUUID();
-      dp.memories.set(id, { id, memory: a.text, agent_id: a.agent_id, metadata: a.metadata ? JSON.parse(a.metadata) : null });
+      dp.memories.set(id, { id, memory: a.text, agent_id: a.agent_id, conversation_id: a.conversation_id, metadata: a.metadata ? JSON.parse(a.metadata) : null });
       return wrap({ results: [{ id, memory: a.text, event: 'ADD' }] });
     });
     server.tool('memory_search', { query: z.string(), conversation_id: z.string(), datapack_id: z.string().optional(), agent_id: z.string().optional(), limit: z.number().optional() }, async (a) => {
@@ -61,6 +62,11 @@ function createFakeMeko({ apiKey = 'mko_test_key_123456789' } = {}) {
       log('memory_delete_by_id', a);
       const dp = state.datapacks.get(a.datapack_id || state.conversations.get(a.conversation_id));
       if (!dp || !dp.memories.delete(a.memory_id)) return err('not_found', 'memory not found');
+      return wrap({ deleted: true });
+    });
+    server.tool('conversation_delete', { conversation_id: z.string(), datapack_id: z.string().optional(), agent_id: z.string().optional() }, async (a) => {
+      log('conversation_delete', a);
+      if (!state.conversations.delete(a.conversation_id)) return err('not_found', 'conversation not found');
       return wrap({ deleted: true });
     });
     return server;

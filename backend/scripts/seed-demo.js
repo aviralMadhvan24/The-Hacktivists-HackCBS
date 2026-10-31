@@ -2,6 +2,7 @@
 //
 //   npm run seed:demo            create demo data (skips users that already exist)
 //   npm run seed:demo -- --reset delete existing demo users/families first, then recreate
+//   add --with-mehta to also create the second demo family (Rohan + Neha Mehta)
 //
 // Every demo user has an @demo.finsight.test email and the same password, and
 // every family name starts with "Demo". Refuses to run when NODE_ENV=production
@@ -40,10 +41,13 @@ async function resetDemo() {
   const ids = rows.map((r) => r.id);
   if (!ids.length) return 0;
   // Remove their Meko datapacks too, so nothing is left behind in Meko.
-  const fams = await db.query("SELECT id FROM families WHERE name LIKE 'Demo %' AND created_by = ANY($1::uuid[])", [ids]);
+  // Families made by demo users (seeded, or created while trying the demo) whose members are all demo users.
+  const fams = await db.query(
+    `SELECT f.id FROM families f WHERE f.created_by = ANY($1::uuid[])
+       AND NOT EXISTS (SELECT 1 FROM family_members m WHERE m.family_id = f.id AND NOT (m.user_id = ANY($1::uuid[])))`, [ids]);
   for (const f of fams.rows) await context.deleteFamilyContext(f.id);
   for (const id of ids) await context.deleteAllForUser(id);
-  await db.query("DELETE FROM families WHERE name LIKE 'Demo %' AND created_by = ANY($1::uuid[])", [ids]);
+  await db.query('DELETE FROM families WHERE id = ANY($1::uuid[])', [fams.rows.map((f) => f.id)]);
   for (const t of ['sessions', 'consents', 'concall_analyses', 'research_sources', 'usage_counters', 'subscriptions', 'broker_connections', 'oauth_states', 'score_snapshots', 'agent_evaluations']) {
     const col = t === 'score_snapshots' ? 'viewer_id' : 'user_id';
     await db.query(`DELETE FROM ${t} WHERE ${col} = ANY($1::uuid[])`, [ids]);
@@ -211,18 +215,22 @@ async function main() {
   await migrate({ log: () => {} });
   if (args.has('--reset')) console.log(`Removed ${await resetDemo()} existing demo user(s).`);
 
+  // The demo uses one family by default; the Mehta family is optional.
+  if (!args.has('--with-mehta')) { delete USERS.rohan; delete USERS.neha; }
   for (const k of Object.keys(USERS)) await ensureUser(k);
   if (Object.values(USERS).some((u) => u.existed)) {
     console.log('Demo users already exist. Run with --reset to recreate them and their families.');
   } else {
     const s = await seedSharma();
     console.log(`Demo Sharma Family: 4 members, ${s.live}/6 simulated-Zerodha holdings priced live, ${s.ctx} memories (${s.synced} synced to Meko).`);
-    const m = await seedMehta();
-    console.log(`Demo Mehta Family: 2 members, ${m.live}/2 Groww + ${m.liveZ}/2 simulated-Zerodha holdings priced live.`);
+    if (USERS.rohan) {
+      const m = await seedMehta();
+      console.log(`Demo Mehta Family: 2 members, ${m.live}/2 Groww + ${m.liveZ}/2 simulated-Zerodha holdings priced live.`);
+    }
   }
   console.log(`\nSign in at the web app with any of these (password: ${PASSWORD}):`);
   console.table(Object.values(USERS).map((u) => ({ name: u.name, email: u.email })));
-  console.log('Roles — Sharma: Rajesh owner, Priya admin, Arjun member, Kamla viewer. Mehta: Rohan owner, Neha admin.');
+  console.log(`Roles — Sharma: Rajesh owner, Priya admin, Arjun member, Kamla viewer.${USERS.rohan ? ' Mehta: Rohan owner, Neha admin.' : ''}`);
 }
 
 // Flaky networks (rotating public IPs) can drop the first connection; retry a few times.

@@ -10,7 +10,7 @@ let call; let api; let a; let b; let c; let famA; let famB;
 test.before(async () => {
   const url = await fake.start();
   Object.assign(process.env, { MEKO_ENABLED: 'true', MEKO_ISOLATION: 'shared', MEKO_MCP_URL: url, MEKO_API_KEY: fake.apiKey });
-  delete process.env.MEKO_DATAPACK_ID;
+  process.env.MEKO_DATAPACK_ID = ''; // empty, not deleted: dotenv would reload the developer's value
   api = require('./helpers/api');
   ({ call } = api);
   await api.start();
