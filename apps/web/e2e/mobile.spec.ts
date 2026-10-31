@@ -14,7 +14,7 @@ test('mobile layout has no horizontal overflow', async ({ page }) => {
   await page.getByLabel('Password').fill('mobile-pass-1');
   await page.getByRole('button', { name: 'Create account' }).click();
   await page.getByRole('button', { name: 'Create family' }).click();
-  await expect(page.getByText('No financial records yet')).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Just me' })).toBeVisible(); // home is the chat
   await noOverflow();
   const bar = page.locator('.mobile-nav');
   for (const name of ['Ask', 'Money', 'Stress', 'Overview']) {
@@ -41,7 +41,7 @@ test('mobile overview with data', async ({ page }) => {
   await page.getByLabel('Password').fill('mobile-pass-1');
   await page.getByRole('button', { name: 'Create account' }).click();
   await page.getByRole('button', { name: 'Create family' }).click();
-  await expect(page.getByText('No financial records yet')).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Just me' })).toBeVisible(); // home is the chat
   await page.evaluate(async () => {
     const h = { 'Content-Type': 'application/json', 'X-LOS-CSRF': '1' };
     const me = (await (await fetch('/api/auth/session')).json()).user;
@@ -53,7 +53,7 @@ test('mobile overview with data', async ({ page }) => {
     await post('cashflows', { direction: 'income', category: 'salary', name: 'Salary', amount: 10000 });
     await post('cashflows', { direction: 'expense', category: 'living', name: 'Living', amount: 20000 });
   });
-  await page.reload();
+  await page.goto('/overview');
   await expect(page.getByRole('heading', { name: 'Resilience score' })).toBeVisible();
   await expect(page.getByText('Needs attention')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);

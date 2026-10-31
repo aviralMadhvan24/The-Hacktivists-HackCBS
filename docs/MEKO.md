@@ -1,70 +1,63 @@
 # Meko Integration
 
-Meko is FinSight's contextual memory: approved family goals, preferences, decision reasoning, stress-test summaries and company research. **It never stores or supplies balances**: every number comes from YugabyteDB.
+## How memory works now (person memory)
 
-## How the backend connects
+**FinSight never writes memories.** Meko builds each person's memory by itself from:
 
-Meko publishes its tools over **MCP (Streamable HTTP)** at `https://mcp.mekodata.ai/mcp`, authenticated with `Authorization: Bearer mko_…`. That is the integration method used here (`backend/services/meko/client.js`, official `@modelcontextprotocol/sdk`). No undocumented REST endpoints are used.
+1. **Chats with the FinSight chatbot.** Every question and answer is sent with
+   `conversation_add_message`. Meko extracts memories from what the user said.
+2. **Activity in the app.** Short first-person notes such as "I ran a family stress test:
+   market fall 30%…" are sent to the same conversation after a stress test, investment
+   evaluation, proposal, vote, Zerodha sync, concall analysis or document upload.
 
-> The Meko connection used by your coding assistant is separate from the app. The backend needs its **own** API key in `backend/.env`.
+Users can **see** their memories and **forget** any of them (Memory page,
+`GET/DELETE /api/me/memory`). Nobody can type or edit a memory. The old
+"add context" routes were removed.
 
-Tools used: `datapack_create`, `datapack_delete`, `conversation_create`, `memory_add`, `memory_search`, `memory_delete_by_id`.
+### One person, one place
+
+- When the Meko plan allows it, each person gets **their own datapack**.
+- On the free tier Meko refuses new datapacks (`FREE_TIER_DATAPACK_LIMIT`, seen live even
+  with one datapack left). Then the person gets **their own conversation** inside the shared
+  datapack (`MEKO_DATAPACK_ID` or the account default), and every read is filtered to that
+  conversation (`memory_get_all` rows carry `conversation_id`; `memory_search` uses `run_id`).
+  Verified live: a turn produced two memories tagged with that conversation, and `run_id`
+  returned only them.
+- The code tries a dedicated datapack first for each new person, so lifting the limit needs
+  no code change. `MEKO_PERSON_DATAPACKS=never` skips the attempt.
+
+### Family planning
+
+The chat has two modes: **Just me** and **Family planning**. A member can share their memory
+and documents with a family (`PUT /api/families/:fid/memory-sharing`). Family planning
+searches the memory and documents of every member who shares. Personal mode never does.
+
+## Documents (knowledge base)
+
+`POST /api/me/documents` uploads a PDF/txt (≤ 5 MB on the free tier) to the user's Meko
+knowledge base through Meko's presigned S3 upload. The user must confirm that the
+**original file**, including any PAN, Aadhaar or account numbers, is stored in Meko.
+FinSight keeps only metadata, never the file.
+
+- Indexing status comes from `knowledgebase_document_status`. It has no document id, so
+  FinSight finds the id by searching for a short text fingerprint of the file.
+- The chatbot's `search_documents` tool only returns passages from documents the person
+  (or, in family mode, a sharing member) uploaded.
+- AI extracts suggested income, accounts, holdings and loans from the text. They are added
+  to a family's records only when the user approves them.
+- Verified live: upload → indexed → searchable → deleted.
 
 ## Configuration
 
-```env
-MEKO_ENABLED=true
-MEKO_MCP_URL=https://mcp.mekodata.ai/mcp
-MEKO_API_KEY=mko_...            # create a dedicated key for the FinSight backend
-MEKO_DATAPACK_PREFIX=finsight # datapack names: <prefix>-family-<uuid>, <prefix>-user-<uuid>
-MEKO_AGENT_ID=liquidityos_backend
-```
-
-With `MEKO_ENABLED=false` (default) everything still works: memories are saved to the YugabyteDB index and search uses local keyword matching, labelled as such in the UI.
-
-## Storage modes
-
-| `MEKO_ISOLATION` | Where memories go | When to use |
-|---|---|---|
-| `shared` (default) | One datapack: `MEKO_DATAPACK_ID`, or the account's default datapack | Meko free tier, which caps the number of datapacks (we hit `FREE_TIER_DATAPACK_LIMIT` at 4) |
-| `datapack` | One datapack per family and one per user | Paid Meko plans; strongest separation |
-| `family` (used for the demo) | One datapack per family (the first family uses `MEKO_DATAPACK_ID`, so no new datapack), and inside it **one conversation per member**, titled "Member · Family". Each memory is written to its author's conversation, so Meko can list or filter (`run_id`) one member's memories. Verified live: each member conversation returned exactly that member's memories. | One family per datapack with per-member separation; fits the free tier for a single demo family |
-
-In shared mode isolation is enforced entirely by the index below, and search results return only our own canonical text (never Meko's stored text), so even if Meko merges or links memories internally, no other family's or member's words can surface. Tested in `backend/tests/meko-shared.test.js`.
-
-## Isolation design
-
-Two facts about Meko shape the design:
-
-1. **An API key covers every datapack in the account.**
-2. **`memory_search` searches the whole datapack; `agent_id` does not filter it** (per the tool's own documentation).
-
-So isolation is enforced by FinSight, not by Meko:
-
-| Control | Implementation |
+| Variable | Meaning |
 |---|---|
-| Separate stores | Shared family context lives in the family's datapack. A member's private context lives in that **user's own datapack**, so it's never in a datapack another member's search touches. |
-| Authoritative index | Every memory is a row in `context_memories` (family, owner, kind, sanitised text, sources, Meko ids, sync status). |
-| Result filtering | Search results are mapped back to index rows the viewer may see (shared, or their own private). Anything else, including memories written to Meko by other tools, is dropped. Tested with injected foreign memories. |
-| Authorisation | Family role checks on every read and write. Shared writes need role ≥ member; only the author or a family admin can correct or delete shared context. |
-| Consent | Writes require the user's `meko_context` consent (Settings → Privacy). |
-| Sanitisation | Before storage: account numbers, Aadhaar, PAN, IFSC, card numbers, emails, phone numbers and API tokens are removed and the user is told what was removed. |
-| No credentials | The Meko key stays on the server. Broker tokens and account numbers are never sent. |
+| `MEKO_ENABLED`, `MEKO_MCP_URL`, `MEKO_API_KEY` | Connection |
+| `MEKO_DATAPACK_ID` | Shared datapack used when a personal one can't be created |
+| `MEKO_PERSON_DATAPACKS` | `try` (default) or `never` |
+| `MEKO_AGENT_ID` | Agent id used on all calls |
 
-## Lifecycle
+## Legacy
 
-- **Correct**: the old memory is deleted from Meko and marked `superseded`; the corrected text is written as a new memory. History stays in the index.
-- **Delete**: removed from Meko first; if that fails nothing is changed and the user is asked to retry. The index keeps a content-free tombstone for the audit trail.
-- **Outage**: saving succeeds locally with `sync_status = failed`; search falls back to keyword matching; "Retry Meko sync" pushes pending memories later.
-- **Account deletion**: the user's private datapack is deleted; deletion is blocked (and retryable) if Meko can't be reached, so private context is never left behind silently.
-- **Family deletion**: the family datapack is deleted (best effort, recorded in the audit log).
-
-## Where context is used
-
-- Investment agent: searches family context for the stock, company and sector; passes matches to the AI narrative as "family context".
-- UI: "Save reasoning to memory" (agent), "Save summary to family memory" (concall analyses), and the Family memory page (add, search, correct, delete).
-
-## Verification status
-
-- **Tested** against an in-process MCP server that implements Meko's documented tool signatures and semantics (datapack-wide search, `{"result": "<json>"}` envelopes): isolation, injection filtering, sanitisation, correction, deletion, outage and resync, account deletion (`backend/tests/meko.test.js`).
-- **Verified against live Meko** (2026-10-31): datapacks created per family and per user, memories stored with ids, searches served by Meko, and a member could not see another member's private memory. Live Meko requires `conversation_id` on `datapack_create`/`datapack_delete` (the schema marks it optional); the backend keeps a control conversation in the account's default datapack for this and recreates it if Meko stops recognising it.
+`services/meko/contextService.js` (family context written by the app, modes
+`shared`/`family`/`datapack`) is kept only to clean up memories created before this change,
+on account deletion and demo reset.

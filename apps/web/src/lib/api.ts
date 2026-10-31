@@ -13,7 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 let onUnauthorized: (() => void) | null = null;
 export function setUnauthorizedHandler(fn: () => void) {
@@ -49,6 +49,7 @@ export const api = {
   get: <T>(p: string) => request<T>('GET', p),
   post: <T>(p: string, b?: unknown, opts?: { signal?: AbortSignal }) => request<T>('POST', p, b ?? {}, opts),
   patch: <T>(p: string, b: unknown) => request<T>('PATCH', p, b),
+  put: <T>(p: string, b: unknown) => request<T>('PUT', p, b),
   del: <T>(p: string) => request<T>('DELETE', p),
   upload: <T>(p: string, form: FormData) => request<T>('POST', p, undefined, { form }),
 };

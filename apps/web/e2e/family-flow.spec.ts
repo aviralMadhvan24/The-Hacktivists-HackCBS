@@ -40,7 +40,7 @@ test.describe.serial('family flow', () => {
     await expect(page.getByText(`Welcome, ${asha.name}`)).toBeVisible();
     await page.getByLabel('Family name').fill('Rao Family');
     await page.getByRole('button', { name: 'Create family' }).click();
-    await expect(page.getByText('No financial records yet')).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Just me' })).toBeVisible(); // home is the chat
 
     await page.getByRole('link', { name: 'Family', exact: true }).first().click();
     await page.getByLabel('Email').fill(ravi.email);
@@ -56,7 +56,7 @@ test.describe.serial('family flow', () => {
     await page.goto(new URL(inviteLink).pathname + new URL(inviteLink).search);
     await expect(page.getByLabel('Invite code')).not.toHaveValue('');
     await page.getByRole('button', { name: 'Join family' }).click();
-    await expect(page.getByRole('heading', { name: 'Rao Family' })).toBeVisible();
+    await expect(page.getByLabel('Select family').first()).toContainText('Rao Family');
   });
 
   test('owner enters shared and private records', async ({ page }) => {
@@ -122,6 +122,7 @@ test.describe.serial('family flow', () => {
     await page.getByLabel('Email').fill(ravi.email);
     await page.getByLabel('Password').fill(ravi.password);
     await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.getByRole('link', { name: 'Overview' }).first().click();
     await expect(page.getByText('₹7.00 L').first()).toBeVisible();
     await page.getByRole('link', { name: 'Money & records' }).first().click();
     await expect(page.getByText('Joint savings')).toBeVisible();

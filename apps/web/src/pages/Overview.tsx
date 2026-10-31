@@ -251,7 +251,7 @@ function DashboardView({ d }: { d: Dashboard }) {
 type Alert = { title: string; text: string; cta: string; to: string; icon: typeof AlertTriangle; level: 'bad' | 'warn' };
 
 /** Turns the weakest areas into actionable cards. */
-function buildAlerts(d: Dashboard): Alert[] {
+export function buildAlerts(d: Dashboard): Alert[] {
   const p = d.position;
   const out: Alert[] = [];
   const get = (k: string) => d.score.pillars.find((x) => x.key === k);

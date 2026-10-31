@@ -1,7 +1,10 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ArrowUp, Brain, CheckCircle2, Mic, MicOff, Sparkles, Square, TriangleAlert, Volume2, VolumeX, Wrench } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowUp, Brain, CheckCircle2, FileText, FolderUp, Gauge, Mic, MicOff, Scale, Search, Sparkles, Square, TriangleAlert, Volume2, VolumeX, Wallet, Wrench } from 'lucide-react';
+import type { Dashboard } from '../lib/types';
+import { inrCompact, months } from '../lib/format';
+import { buildAlerts } from './Overview';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useVoice, type VoiceLang } from '../lib/voice';
@@ -26,6 +29,62 @@ const STATE_LABEL: Record<OrbState, string> = { idle: 'Tap the mic and ask anyth
 function readStored(k: string, d: string) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }
 function writeStored(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* ignore */ } }
 
+
+const SHORTCUTS = [
+  { to: '/overview', label: 'Overview', icon: Gauge, tone: 'ic-blue' },
+  { to: '/records', label: 'Money', icon: Wallet, tone: 'ic-green' },
+  { to: '/stress', label: 'Stress test', icon: Activity, tone: 'ic-orange' },
+  { to: '/decisions', label: 'Decisions', icon: Scale, tone: 'ic-teal' },
+  { to: '/documents', label: 'Documents', icon: FolderUp, tone: 'ic-violet' },
+  { to: '/research', label: 'Concalls', icon: FileText, tone: 'ic-blue' },
+  { to: '/invest', label: 'Evaluate', icon: Search, tone: 'ic-green' },
+  { to: '/memory', label: 'Memory', icon: Brain, tone: 'ic-violet' },
+];
+
+/** Side cards on the home page: a snapshot of the numbers and shortcuts to every tool. */
+function HomeSide({ scope }: { scope: 'me' | 'family' }) {
+  const { familyId, user } = useSession();
+  const q = scope === 'family' ? 'scope=family' : `scope=individual&userId=${user?.id}`;
+  const d = useQuery({ queryKey: ['dashboard', familyId, q], queryFn: () => api.get<Dashboard>(`/families/${familyId}/dashboard?${q}`), enabled: Boolean(familyId && user) });
+  const data = d.data;
+  const alerts = data ? buildAlerts(data).slice(0, 2) : [];
+  return (
+    <aside className="home-side" aria-label="Snapshot and shortcuts">
+      <div className="side-cards">
+        <Link to="/overview" className="card side-card">
+          <span className="side-label">{scope === 'family' ? 'Family' : 'My'} resilience</span>
+          <span className="side-value num">{data ? Math.round(data.score.score) : '–'}<small>/100</small></span>
+          <span className="small muted">{data ? data.score.band : 'Loading…'}</span>
+        </Link>
+        <Link to="/records" className="card side-card">
+          <span className="side-label">Net worth</span>
+          <span className="side-value num">{data ? inrCompact(data.position.netWorth) : '–'}</span>
+          <span className="small muted">{data ? `${inrCompact(data.position.assets.liquid)} liquid` : ''}</span>
+        </Link>
+        <Link to="/stress" className="card side-card">
+          <span className="side-label">If income stops</span>
+          <span className="side-value num">{data ? months(data.position.runway.ifIncomeStopsMonths) : '–'}</span>
+          <span className="small muted">of essential spending covered</span>
+        </Link>
+        {alerts.map((a) => (
+          <Link key={a.title} to={a.to} className={`card side-card side-alert ${a.level}`}>
+            <span className="side-label"><AlertTriangle size={13} /> {a.title}</span>
+            <span className="small">{a.text}</span>
+          </Link>
+        ))}
+      </div>
+      <div className="card shortcut-card">
+        <div className="side-label" style={{ marginBottom: 8 }}>Tools</div>
+        <div className="shortcut-grid">
+          {SHORTCUTS.map(({ to, label: l, icon: Icon, tone }) => (
+            <Link key={to} to={to} className="shortcut"><span className={`icon-disc ${tone}`}><Icon size={18} /></span>{l}</Link>
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function CssOrb({ state }: { state: OrbState }) {
   return <div className={`css-orb ${state}`} aria-hidden />;
 }
@@ -37,6 +96,8 @@ export default function Assistant() {
   const [lang, setLang] = useState<VoiceLang>(() => (readStored('fs.voiceLang', 'en-IN') as VoiceLang));
   const [voiceOn, setVoiceOn] = useState(() => readStored('fs.voiceReplies', '1') === '1');
   const [handsFree, setHandsFree] = useState(false);
+  const [scope, setScope] = useState<'me' | 'family'>(() => (readStored('fs.chatScope', 'me') === 'family' ? 'family' : 'me'));
+  useEffect(() => writeStored('fs.chatScope', scope), [scope]);
   const [voiceStyle, setVoiceStyle] = useState<'natural' | 'browser'>(() => (readStored('fs.voiceStyle', 'natural') === 'browser' ? 'browser' : 'natural'));
   useEffect(() => writeStored('fs.voiceStyle', voiceStyle), [voiceStyle]);
   const [caption, setCaption] = useState('');
@@ -58,6 +119,7 @@ export default function Assistant() {
       abortRef.current = ctrl;
       const limit = setTimeout(() => ctrl.abort(), 100000);
       return api.post<{ answer: string; followUps: string[]; toolsUsed: Msg['tools'] }>(`/families/${familyId}/assistant/chat`, {
+        scope,
         messages: history.filter((m) => !m.error).slice(-12).map(({ role, content }) => ({ role, content })),
       }, { signal: ctrl.signal }).finally(() => clearTimeout(limit));
     },
@@ -112,12 +174,19 @@ export default function Assistant() {
 
   return (
     <>
-      <PageHeader title="Ask FinSight" />
+      <PageHeader title={`Namaste${user ? `, ${user.name.split(' ')[0]}` : ''}`}>
+        <div className="tabs" role="radiogroup" aria-label="Planning for">
+          <button role="radio" aria-checked={scope === 'me'} className={`tab ${scope === 'me' ? 'active' : ''}`} onClick={() => setScope('me')}>Just me</button>
+          <button role="radio" aria-checked={scope === 'family'} className={`tab ${scope === 'family' ? 'active' : ''}`} onClick={() => setScope('family')}>Family planning</button>
+        </div>
+      </PageHeader>
       <div className="content">
         {consents.data && !consented && (
           <Notice tone="warn">To chat, turn on <strong>AI analysis of my finances</strong> in <Link to="/settings">Settings</Link>. FinSight then reads your family's numbers to answer.</Notice>
         )}
-        <div className="ask-layout">
+        {scope === 'family' && <p className="small muted" style={{ margin: '0 0 10px' }}>Family planning uses {family?.name || 'the family'}'s numbers and the memory of members who share it (<Link to="/memory">sharing settings</Link>).</p>}
+        <div className="ask-layout home-layout">
+          <HomeSide scope={scope} />
           {/* Voice stage */}
           <section className={`card stage stage-${orbState}`} aria-label="Voice assistant">
             <div className="stage-orb">
@@ -163,7 +232,7 @@ export default function Assistant() {
                 <div className="chat-empty">
                   <span className="icon-disc lg ic-violet" style={{ width: 56, height: 56 }}><Sparkles size={26} /></span>
                   <h2>What would you like to know?</h2>
-                  <p className="muted">I run real stress tests on your records, check decisions, and remember your family's goals. English, Hinglish or Hindi.</p>
+                  <p className="muted">I run real stress tests on your records, check decisions, read your uploaded documents, and remember what you tell me. English, Hinglish or Hindi.</p>
                   <div className="chip-row" style={{ justifyContent: 'center' }}>
                     {STARTERS.map((s) => <button key={s} className="chip" onClick={() => ask(s)} disabled={!consented}>{s}</button>)}
                   </div>
@@ -178,7 +247,7 @@ export default function Assistant() {
                       <div className="tool-trail">
                         {m.tools.map((t, k) => (
                           <span key={k} className={`tool-pill ${t.ok ? '' : 'bad'}`}>
-                            {t.tool === 'search_family_memory' ? <Brain size={12} /> : t.ok ? <CheckCircle2 size={12} /> : <Wrench size={12} />} {t.label}
+                            {t.tool === 'search_memory' || t.tool === 'search_documents' ? <Brain size={12} /> : t.ok ? <CheckCircle2 size={12} /> : <Wrench size={12} />} {t.label}
                           </span>
                         ))}
                       </div>
@@ -210,7 +279,7 @@ export default function Assistant() {
             </form>
           </section>
         </div>
-        <p className="small muted" style={{ marginTop: 10 }}>FinSight explains your own numbers using its engines and your family memory. It is not investment advice and never moves money. Voice runs in your browser.</p>
+        <p className="small muted" style={{ marginTop: 10 }}>FinSight explains your own numbers using its engines; Meko remembers your conversations and app activity. It is not investment advice and never moves money. Voice runs in your browser.</p>
       </div>
     </>
   );

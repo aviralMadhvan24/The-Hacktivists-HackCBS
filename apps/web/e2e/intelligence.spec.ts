@@ -14,7 +14,7 @@ async function setup(page: Page) {
   await page.getByLabel('Password').fill('intel-pass-123');
   await page.getByRole('button', { name: 'Create account' }).click();
   await page.getByRole('button', { name: 'Create family' }).click();
-  await expect(page.getByText('No financial records yet')).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Just me' })).toBeVisible(); // home is the chat
   // Minimal records through the API (cookie session + CSRF header).
   await page.evaluate(async () => {
     const h = { 'Content-Type': 'application/json', 'X-LOS-CSRF': '1' };
@@ -58,25 +58,21 @@ test('forecast shows ranges and backtest', async ({ page }) => {
   await page.screenshot({ path: `${SHOTS}/forecast-desktop.png`, fullPage: true });
 });
 
-test('family memory: consent, save, search (local mode)', async ({ page }) => {
+test('memory is read-only and built by Meko; sharing toggle; documents page', async ({ page }) => {
   await setup(page);
-  await page.getByRole('link', { name: 'Family memory' }).first().click();
-  await expect(page.getByText(/Saving context is off/)).toBeVisible();
-  await page.getByRole('link', { name: 'Settings' }).first().click();
-  await page.getByRole('checkbox', { name: 'Remember decisions and preferences' }).check();
-  await page.getByRole('link', { name: 'Family memory' }).first().click();
-  await page.getByRole('button', { name: 'Add context' }).click();
-  const d = page.getByRole('dialog');
-  await d.getByLabel('Title').fill('Emergency fund goal');
-  await d.getByLabel('What should be remembered?').fill('Keep nine months of essential costs in savings. Old account 123456789012 closed.');
-  page.once('dialog', (x) => x.accept());
-  await d.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('Emergency fund goal')).toBeVisible();
-  await expect(page.getByText('123456789012')).toHaveCount(0);
-  await expect(page.getByText('Saved locally')).toBeVisible();
-  await page.getByLabel('Search memory').fill('emergency fund');
-  await page.getByRole('button', { name: 'Search' }).click();
-  await expect(page.getByText(/Meko is not enabled; used keyword search/)).toBeVisible();
+  await page.getByRole('link', { name: 'Memory', exact: true }).first().click();
+  await expect(page.getByRole('heading', { name: 'What FinSight remembers about you' })).toBeVisible();
+  await expect(page.getByText(/Memory is off/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Add/ })).toHaveCount(0); // no way to write memory
+  await expect(page.getByText(/Meko is not configured/)).toBeVisible(); // Meko disabled in e2e
+  const share = page.getByRole('checkbox', { name: /Share my memory with/ });
+  await share.click();
+  await expect(page.getByText(/Sharing now: you/)).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/memory-desktop.png`, fullPage: true });
+  await page.getByRole('link', { name: 'Documents' }).first().click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Documents' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Upload to Meko/ })).toBeDisabled(); // needs a file and consent
+  await page.screenshot({ path: `${SHOTS}/documents-desktop.png`, fullPage: true });
 });
 
 test('research: discover transcripts on a company IR page', async ({ page }) => {
@@ -84,7 +80,7 @@ test('research: discover transcripts on a company IR page', async ({ page }) => 
   await setup(page);
   await page.getByRole('link', { name: 'Company research' }).first().click();
   await page.getByRole('tab', { name: 'Find transcripts' }).click();
-  await page.getByLabel('Ticker').fill('HDFCBANK');
+  await page.getByLabel('Ticker', { exact: true }).fill('HDFCBANK');
   await page.getByLabel('Company').fill('HDFC Bank');
   await page.getByLabel('IR page URL').fill('https://www.hdfcbank.com/personal/about-us/investor-relations/financial-results');
   await page.getByRole('button', { name: 'Save page' }).click();
@@ -97,7 +93,8 @@ test('research: discover transcripts on a company IR page', async ({ page }) => 
 test('Ask FinSight: consent gate, starters, and a clear message when AI is unavailable', async ({ page }) => {
   await setup(page);
   await page.getByRole('link', { name: 'Ask FinSight' }).first().click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Ask FinSight' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /Namaste/ })).toBeVisible();
+  await expect(page.locator('.home-side')).toBeVisible(); // side cards and tools
   await expect(page.getByText(/turn on/i).first()).toBeVisible();
   await page.getByRole('link', { name: 'Settings' }).first().click();
   await page.getByRole('checkbox', { name: 'AI analysis of my finances' }).check();

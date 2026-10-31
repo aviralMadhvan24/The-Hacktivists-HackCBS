@@ -120,6 +120,53 @@ function AnalysisDetail({ id, onBack }: { id: string; onBack: () => void }) {
   );
 }
 
+/** Ticker only: finds the company's newest transcript on its own website and analyses it. */
+function AutoFind({ onOpen }: { onOpen: (id: string) => void }) {
+  const qc = useQueryClient();
+  const [ticker, setTicker] = useState('');
+  const [period, setPeriod] = useState({ quarter: '', fiscalYear: '' });
+  const find = useMutation({
+    mutationFn: () => api.post<any>('/concall/auto', { ticker }),
+    onSuccess: (r) => setPeriod({ quarter: r.latest?.quarter || '', fiscalYear: r.latest?.fiscalYear || '' }),
+  });
+  const r = find.data;
+  const analyse = useMutation({
+    mutationFn: () => api.post<{ alreadyImported?: boolean; analysisId?: string; meta?: any }>('/concall/import', { pdfUrl: r.latest.url, companyName: r.company, ticker: r.ticker, quarter: period.quarter, fiscalYear: period.fiscalYear }),
+    onSuccess: (x) => { qc.invalidateQueries({ queryKey: ['concalls'] }); onOpen(x.alreadyImported ? x.analysisId! : x.meta.id); },
+  });
+  const periodOk = /^Q[1-4]$/.test(period.quarter) && /^FY\d{2}$/.test(period.fiscalYear);
+  return (
+    <Card title="Find the latest concall automatically" subtitle="Type an NSE ticker. FinSight looks on the company's official website for its newest earnings-call transcript.">
+      <form className="row" onSubmit={(e) => { e.preventDefault(); if (ticker.trim()) find.mutate(); }}>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="e.g. HDFCBANK" aria-label="NSE ticker" style={{ maxWidth: 220 }} />
+        <Button type="submit" loading={find.isPending} disabled={!ticker.trim()}>Find latest transcript</Button>
+      </form>
+      {find.isPending && <p className="small muted">Checking the company website… this can take up to a minute.</p>}
+      {find.error && <Notice tone="bad">{errorMessage(find.error)}</Notice>}
+      {r && r.found && (
+        <div className="stack-sm" style={{ marginTop: 12 }}>
+          <Notice tone="good">Found on {new URL(r.latest.url).hostname}: <strong>{r.latest.title}</strong></Notice>
+          <div className="row">
+            <input value={period.quarter} onChange={(e) => setPeriod({ ...period, quarter: e.target.value.toUpperCase() })} placeholder="Q2" aria-label="Quarter" style={{ width: 70 }} />
+            <input value={period.fiscalYear} onChange={(e) => setPeriod({ ...period, fiscalYear: e.target.value.toUpperCase() })} placeholder="FY27" aria-label="Fiscal year" style={{ width: 80 }} />
+            <Button onClick={() => analyse.mutate()} loading={analyse.isPending} disabled={!periodOk}>Analyse this call</Button>
+            <a className="small" href={r.latest.url} target="_blank" rel="noreferrer noopener">Open PDF</a>
+          </div>
+          {!periodOk && <p className="small muted">Check the quarter and fiscal year (e.g. Q2 and FY27).</p>}
+          {analyse.error && <Notice tone="bad">{errorMessage(analyse.error)}</Notice>}
+        </div>
+      )}
+      {r && !r.found && (
+        <div className="stack-sm" style={{ marginTop: 12 }}>
+          <Notice tone="warn">{r.note}</Notice>
+          {r.website && <p className="small" style={{ margin: 0 }}>Open <a href={r.website} target="_blank" rel="noreferrer noopener">{r.website}</a> → Investors, download the latest transcript PDF and upload it in the <strong>Analyse a transcript</strong> tab, or add the investor page below.</p>}
+          <details className="small muted"><summary>What FinSight checked</summary><ul>{r.steps.map((s: string) => <li key={s}>{s}</li>)}</ul></details>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function Find({ onOpen }: { onOpen: (id: string) => void }) {
   const qc = useQueryClient();
   const [src, setSrc] = useState({ ticker: '', company: '', irUrl: '' });
@@ -136,6 +183,7 @@ function Find({ onOpen }: { onOpen: (id: string) => void }) {
   const [periods, setPeriods] = useState<Record<string, { quarter: string; fiscalYear: string }>>({});
   return (
     <div className="stack">
+      <AutoFind onOpen={onOpen} />
       <Notice>Listed companies must publish earnings-call transcripts on their own websites (SEBI LODR Reg. 46). FinSight reads those pages, respecting each site's robots.txt. Some companies block automated access — then download the PDF and upload it.</Notice>
       <Card title="Company investor-relations pages">
         <form className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }} onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate(); }}>

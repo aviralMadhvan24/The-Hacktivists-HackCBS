@@ -1,5 +1,5 @@
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Activity, Brain, FileText, Gauge, LayoutGrid, LineChart, LogOut, MessageCircle, Scale, Search, Settings as SettingsIcon, Users, Wallet } from 'lucide-react';
+import { Activity, Brain, FileText, FolderUp, Gauge, LayoutGrid, LineChart, LogOut, MessageCircle, Scale, Search, Settings as SettingsIcon, Users, Wallet } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSession } from './lib/session';
 import { Loading, Modal } from './components/ui';
@@ -16,29 +16,31 @@ import Research from './pages/Research';
 import Forecast from './pages/Forecast';
 import Memory from './pages/Memory';
 import Assistant from './pages/Assistant';
+import Documents from './pages/Documents';
 
 const NAV = [
-  { to: '/', label: 'Overview', icon: Gauge, end: true },
-  { to: '/ask', label: 'Ask FinSight', icon: MessageCircle },
+  { to: '/', label: 'Ask FinSight', icon: MessageCircle, end: true },
+  { to: '/overview', label: 'Overview', icon: Gauge },
   { to: '/records', label: 'Money & records', icon: Wallet },
   { to: '/stress', label: 'Stress test', icon: Activity },
   { to: '/decisions', label: 'Decisions', icon: Scale },
   { to: '/invest', label: 'Evaluate investment', icon: Search },
   { to: '/research', label: 'Company research', icon: FileText },
   { to: '/forecast', label: 'Price forecast', icon: LineChart },
-  { to: '/memory', label: 'Family memory', icon: Brain },
+  { to: '/documents', label: 'Documents', icon: FolderUp },
+  { to: '/memory', label: 'Memory', icon: Brain },
   { to: '/family', label: 'Family', icon: Users },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 // Bottom bar on phones: the four most used destinations plus "More".
 const TAB_BAR = [
-  { to: '/', label: 'Overview', icon: Gauge, end: true },
-  { to: '/ask', label: 'Ask', icon: MessageCircle },
+  { to: '/', label: 'Ask', icon: MessageCircle, end: true },
+  { to: '/overview', label: 'Overview', icon: Gauge },
   { to: '/records', label: 'Money', icon: Wallet },
   { to: '/stress', label: 'Stress', icon: Activity },
 ];
-const DISC = ['ic-blue', 'ic-green', 'ic-orange', 'ic-teal', 'ic-violet', 'ic-blue', 'ic-green', 'ic-violet', 'ic-teal', 'ic-orange'];
+const DISC = ['ic-blue', 'ic-green', 'ic-orange', 'ic-teal', 'ic-violet', 'ic-blue', 'ic-green', 'ic-violet', 'ic-teal', 'ic-orange', 'ic-blue'];
 
 function Brand() {
   return (
@@ -72,7 +74,6 @@ function Shell({ children }: { children: ReactNode }) {
           <div className="nav-section" style={{ padding: '0 0 6px 4px' }}>Family</div>
           <FamilySwitcher />
         </div>
-        <Link to="/ask" className="ask-cta"><span className="icon-disc" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}><MessageCircle size={18} /></span><span>Ask FinSight<small>Talk to your money guide</small></span></Link>
         <nav className="nav" aria-label="Main">
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end}><Icon size={18} aria-hidden /> {label}</NavLink>
@@ -134,12 +135,14 @@ export default function App() {
   return (
     <Shell>
       <Routes>
-        <Route path="/" element={<Overview />} />
+        <Route path="/" element={<Assistant />} />
+        <Route path="/overview" element={<Overview />} />
+        <Route path="/documents" element={<Documents />} />
         <Route path="/records" element={<Records />} />
         <Route path="/stress" element={<Stress />} />
         <Route path="/decisions" element={<Decisions />} />
         <Route path="/decisions/:id" element={<Decisions />} />
-        <Route path="/ask" element={<Assistant />} />
+        <Route path="/ask" element={<Navigate to="/" replace />} />
         <Route path="/invest" element={<Invest />} />
         <Route path="/research" element={<Research />} />
         <Route path="/forecast" element={<Forecast />} />
