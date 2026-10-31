@@ -24,48 +24,62 @@ function parseJson(text, provider) {
   }
 }
 
-async function post(url, headers, body, provider) {
+async function post(url, headers, body, provider, timeoutMs = TIMEOUT_MS) {
   let res;
   try {
-    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(TIMEOUT_MS) });
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
-    throw Object.assign(new Error(`${provider} is unreachable: ${err.message}`), { code: 'LLM_UNAVAILABLE' });
+    const timedOut = err.name === 'TimeoutError' || err.name === 'AbortError';
+    throw Object.assign(new Error(`${provider} ${timedOut ? `did not respond within ${Math.round(timeoutMs / 1000)}s` : `is unreachable: ${err.message}`}`), { code: 'LLM_UNAVAILABLE', retryable: true });
   }
   if (!res.ok) {
     const text = (await res.text()).slice(0, 500);
-    throw Object.assign(new Error(`${provider} API error (${res.status}): ${text}`), { code: res.status === 429 ? 'LLM_RATE_LIMITED' : 'LLM_UNAVAILABLE' });
+    throw Object.assign(new Error(`${provider} API error (${res.status}): ${text}`), {
+      code: res.status === 429 ? 'LLM_RATE_LIMITED' : 'LLM_UNAVAILABLE',
+      retryable: [404, 429, 500, 502, 503, 504].includes(res.status),
+    });
   }
   return res.json();
 }
 
-// Primary model plus fallbacks: Google retires models for new keys (404) and
-// popular ones are sometimes overloaded (503/429), so we try the next one.
+// Primary model plus fallbacks: Google retires models for new keys (404), and
+// models are sometimes overloaded (503/429) or simply hang. A model that fails
+// is skipped for a few minutes so later requests don't wait on it again.
 function geminiModels() {
-  const primary = process.env.GEMINI_MODEL || 'gemini-flash-latest';
-  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.6-flash,gemini-3.5-flash').split(',').map((s) => s.trim()).filter(Boolean);
+  const primary = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-3.5-flash').split(',').map((s) => s.trim()).filter(Boolean);
   return [...new Set([primary, ...fallbacks])];
 }
+const unhealthyUntil = new Map();
+const COOLDOWN_MS = 5 * 60 * 1000;
 
-async function callGemini(prompt, { system, temperature }) {
-  const body = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { responseMimeType: 'application/json', temperature },
-  };
-  if (system) body.systemInstruction = { parts: [{ text: system }] };
+async function callGemini(prompt, { system, temperature, fast, timeoutMs }) {
+  const all = geminiModels();
+  const healthy = all.filter((m) => !(unhealthyUntil.get(m) > Date.now()));
+  const order = healthy.length ? [...healthy, ...all.filter((m) => !healthy.includes(m))] : all;
+  const perCall = Math.min(timeoutMs || 30000, TIMEOUT_MS);
+  const started = Date.now();
+  const budget = Math.max(perCall * 2, 60000);
   let lastErr;
-  // Two passes over the model list; pause before the second if everything was busy.
-  const chain = [...geminiModels(), null, ...geminiModels()];
-  for (const model of chain) {
-    if (model === null) { await new Promise((r) => setTimeout(r, 2000)); continue; }
+  for (const model of order) {
+    if (Date.now() - started > budget) break;
+    const body = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json', temperature },
+    };
+    // Gemini 3 models accept a thinking level; minimal is much faster for short, grounded replies.
+    if (fast && /gemini-3|latest/.test(model)) body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
+    if (system) body.systemInstruction = { parts: [{ text: system }] };
     let data;
     try {
       data = await post(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-        { 'x-goog-api-key': process.env.GEMINI_API_KEY }, body, 'Gemini');
+        { 'x-goog-api-key': process.env.GEMINI_API_KEY }, body, 'Gemini', perCall);
     } catch (err) {
       lastErr = err;
-      if (/\((404|429|500|503)\)/.test(err.message)) continue; // retired, rate-limited or overloaded → next model
+      if (err.retryable) { unhealthyUntil.set(model, Date.now() + COOLDOWN_MS); continue; }
       throw err;
     }
+    unhealthyUntil.delete(model);
     const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
     if (!text) {
       const reason = data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason || 'empty response';
@@ -73,7 +87,7 @@ async function callGemini(prompt, { system, temperature }) {
     }
     return { json: parseJson(text, 'Gemini'), provider: 'Google Gemini', model: data.modelVersion || model };
   }
-  throw lastErr;
+  throw lastErr || Object.assign(new Error('Gemini did not respond in time.'), { code: 'LLM_UNAVAILABLE' });
 }
 
 async function callOpenAI(prompt, { system, temperature }) {
@@ -98,8 +112,8 @@ async function callAnthropic(prompt, { system, temperature }) {
 }
 
 /** Returns { json, provider, model }. Throws LLMNotConfiguredError when no key is set. */
-async function generateJson(prompt, { system, temperature = 0.1 } = {}) {
-  if (process.env.GEMINI_API_KEY) return callGemini(prompt, { system, temperature });
+async function generateJson(prompt, { system, temperature = 0.1, fast = false, timeoutMs } = {}) {
+  if (process.env.GEMINI_API_KEY) return callGemini(prompt, { system, temperature, fast, timeoutMs });
   if (process.env.OPENAI_API_KEY) return callOpenAI(prompt, { system, temperature });
   if (process.env.ANTHROPIC_API_KEY) return callAnthropic(prompt, { system, temperature });
   throw new LLMNotConfiguredError();

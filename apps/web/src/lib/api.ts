@@ -20,7 +20,7 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
-async function request<T>(method: Method, path: string, body?: unknown, init?: { form?: FormData }): Promise<T> {
+async function request<T>(method: Method, path: string, body?: unknown, init?: { form?: FormData; signal?: AbortSignal }): Promise<T> {
   const headers: Record<string, string> = { 'X-LOS-CSRF': '1' };
   let payload: BodyInit | undefined;
   if (init?.form) payload = init.form;
@@ -30,8 +30,9 @@ async function request<T>(method: Method, path: string, body?: unknown, init?: {
   }
   let res: Response;
   try {
-    res = await fetch(`/api${path}`, { method, headers, body: payload, credentials: 'same-origin' });
-  } catch {
+    res = await fetch(`/api${path}`, { method, headers, body: payload, credentials: 'same-origin', signal: init?.signal });
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') throw new ApiError(0, 'ABORTED', 'Cancelled.');
     throw new ApiError(0, 'NETWORK', 'Cannot reach the FinSight server. Check your connection.');
   }
   const text = await res.text();
@@ -46,7 +47,7 @@ async function request<T>(method: Method, path: string, body?: unknown, init?: {
 
 export const api = {
   get: <T>(p: string) => request<T>('GET', p),
-  post: <T>(p: string, b?: unknown) => request<T>('POST', p, b ?? {}),
+  post: <T>(p: string, b?: unknown, opts?: { signal?: AbortSignal }) => request<T>('POST', p, b ?? {}, opts),
   patch: <T>(p: string, b: unknown) => request<T>('PATCH', p, b),
   del: <T>(p: string) => request<T>('DELETE', p),
   upload: <T>(p: string, form: FormData) => request<T>('POST', p, undefined, { form }),

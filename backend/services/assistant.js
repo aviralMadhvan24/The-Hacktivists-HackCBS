@@ -24,7 +24,9 @@ const stress = require('../engine/stress');
 const { evaluateDecision } = require('../engine/whatif');
 const { formatINR, round2 } = require('../engine/money');
 
-const MAX_STEPS = 5;
+const MAX_STEPS = 4;
+const TURN_BUDGET_MS = 75000; // whole answer
+const CALL_TIMEOUT_MS = 25000; // each model call
 
 // ---- Compact summaries (keep prompts small and factual) -----------------------
 function summarisePosition(pos) {
@@ -184,20 +186,24 @@ async function chat(familyId, userId, body, ip, deps = { llm }) {
     });
 
     const transcript = messages.map((x) => `${x.role === 'user' ? 'USER' : 'FINSIGHT'}: ${x.content}`).join('\n');
-    const steps = [];
+    // Prefetched so simple questions can be answered in a single model call.
+    const summary = summarisePosition(await ctx.position('family'));
+    const started = Date.now();
+    const steps = [{ tool: 'get_financial_summary', args: { scope: 'family' }, result: summary, label: 'Read your financial summary', prefetched: true }];
     let answer = null;
     let followUps = [];
     for (let i = 0; i <= MAX_STEPS; i++) {
       const toolLog = steps.map((s) => `TOOL CALL ${s.tool} ${JSON.stringify(s.args)}\nTOOL RESULT ${JSON.stringify(s.result)}`).join('\n');
-      const forceAnswer = i === MAX_STEPS ? '\nYou have used all tool calls. Answer now with {"answer": ...}.' : '';
-      const { json } = await deps.llm.generateJson(`CONVERSATION\n${transcript}\n\n${toolLog ? `TOOL RESULTS SO FAR\n${toolLog}\n\n` : ''}Next step (one JSON object).${forceAnswer}`, { system, temperature: 0.3 });
+      const outOfTime = Date.now() - started > TURN_BUDGET_MS - CALL_TIMEOUT_MS;
+      const forceAnswer = i === MAX_STEPS || outOfTime ? '\nNo more tool calls. Answer now with {"answer": ...} using the results above.' : '';
+      const { json } = await deps.llm.generateJson(`CONVERSATION\n${transcript}\n\n${toolLog ? `TOOL RESULTS SO FAR\n${toolLog}\n\n` : ''}Next step (one JSON object).${forceAnswer}`, { system, temperature: 0.3, fast: true, timeoutMs: CALL_TIMEOUT_MS });
       if (json && typeof json.answer === 'string') {
         answer = json.answer.slice(0, 3000);
         followUps = Array.isArray(json.followUps) ? json.followUps.filter((x) => typeof x === 'string').slice(0, 3).map((x) => x.slice(0, 120)) : [];
         break;
       }
       const tool = json && TOOLS[json.tool];
-      if (!tool || i === MAX_STEPS) {
+      if (!tool || i === MAX_STEPS || outOfTime) {
         answer = "Sorry, I couldn't work that out. Could you rephrase the question?";
         break;
       }
@@ -209,7 +215,8 @@ async function chat(familyId, userId, body, ip, deps = { llm }) {
     return {
       answer,
       followUps,
-      toolsUsed: steps.map((s) => ({ tool: s.tool, label: s.label, ok: !(s.result && s.result.error) })),
+      toolsUsed: steps.filter((s) => !s.prefetched).map((s) => ({ tool: s.tool, label: s.label, ok: !(s.result && s.result.error) })),
+      elapsedMs: Date.now() - started,
       disclaimer: 'FinSight explains your own numbers. It is not investment advice.',
     };
   } catch (err) {

@@ -70,8 +70,8 @@ test('unknown tool ends gracefully; step limit forces an answer', async () => {
   const r = await ask('Paise transfer karo');
   assert.equal(r.status, 200);
   assert.match(r.body.answer, /rephrase/);
-  script = Array.from({ length: 5 }, () => ({ tool: 'get_financial_summary', args: {} })).concat([{ answer: 'Done.' }]);
+  script = Array.from({ length: 4 }, () => ({ tool: 'get_financial_summary', args: {} })).concat([{ answer: 'Done.' }]);
   const r2 = await ask('Summary do');
-  assert.equal(r2.body.toolsUsed.length, 5);
+  assert.equal(r2.body.toolsUsed.length, 4);
   assert.equal(r2.body.answer, 'Done.');
 });

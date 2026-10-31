@@ -39,6 +39,8 @@ export default function Assistant() {
   const [handsFree, setHandsFree] = useState(false);
   const [caption, setCaption] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const voice = useVoice();
   const webgl = useMemo(() => { try { const c = document.createElement('canvas'); return Boolean(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } }, []);
   const consents = useQuery({ queryKey: ['consents'], queryFn: () => api.get<{ active: Record<string, boolean> }>('/me/consents') });
@@ -48,9 +50,15 @@ export default function Assistant() {
   useEffect(() => writeStored('fs.voiceReplies', voiceOn ? '1' : '0'), [voiceOn]);
 
   const send = useMutation({
-    mutationFn: ({ history }: { history: Msg[]; spoken: boolean }) => api.post<{ answer: string; followUps: string[]; toolsUsed: Msg['tools'] }>(`/families/${familyId}/assistant/chat`, {
-      messages: history.filter((m) => !m.error).slice(-12).map(({ role, content }) => ({ role, content })),
-    }),
+    mutationFn: ({ history }: { history: Msg[]; spoken: boolean }) => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      const limit = setTimeout(() => ctrl.abort(), 100000);
+      return api.post<{ answer: string; followUps: string[]; toolsUsed: Msg['tools'] }>(`/families/${familyId}/assistant/chat`, {
+        messages: history.filter((m) => !m.error).slice(-12).map(({ role, content }) => ({ role, content })),
+      }, { signal: ctrl.signal }).finally(() => clearTimeout(limit));
+    },
     onSuccess: async (r, vars) => {
       setMessages((m) => [...m, { role: 'assistant', content: r.answer, tools: r.toolsUsed, followUps: r.followUps }]);
       setCaption(r.answer);
@@ -60,14 +68,23 @@ export default function Assistant() {
       }
     },
     onError: (e) => {
-      const busy = e instanceof ApiError && (e.status === 502 || e.status === 503) && /demand|unavailable|overloaded|busy/i.test(e.message);
-      const text = busy ? 'The AI service is very busy right now. Please try again in a minute.' : errorMessage(e);
+      const busy = e instanceof ApiError && (e.status === 502 || e.status === 503) && /demand|unavailable|overloaded|busy|respond/i.test(e.message);
+      const cancelled = e instanceof ApiError && e.code === 'ABORTED';
+      const text = cancelled ? 'Stopped. Ask again whenever you like.' : busy ? 'The AI service is very busy right now. Please try again in a minute.' : errorMessage(e);
       setMessages((m) => [...m, { role: 'assistant', error: true, content: text }]);
       setCaption(text);
     },
   });
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages, send.isPending]);
+  useEffect(() => {
+    if (!send.isPending) { setElapsed(0); return; }
+    const t0 = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 500);
+    return () => clearInterval(id);
+  }, [send.isPending]);
+  const cancel = () => abortRef.current?.abort();
+  const progress = elapsed < 5 ? 'Reading your records…' : elapsed < 18 ? 'Running the numbers…' : elapsed < 45 ? 'Writing the answer…' : 'Still working — the AI service is slow right now…';
 
   const ask = (text: string, spoken = false) => {
     const t = text.trim();
@@ -86,7 +103,8 @@ export default function Assistant() {
     if (heard) ask(heard, true);
   };
 
-  const orbState: OrbState = voice.listening ? 'listening' : send.isPending ? 'thinking' : voice.speaking ? 'speaking' : 'idle';
+  const orbStateCalc: OrbState = voice.listening ? 'listening' : send.isPending ? 'thinking' : voice.speaking ? 'speaking' : 'idle';
+  const orbState = orbStateCalc;
   const liveCaption = voice.listening ? (voice.interim || '…') : send.isPending ? (messages[messages.length - 1]?.content || '') : caption;
   const submit = (e: FormEvent) => { e.preventDefault(); ask(input); };
 
@@ -107,7 +125,7 @@ export default function Assistant() {
                 </Suspense>
               ) : <CssOrb state={orbState} />}
             </div>
-            <div className="stage-status" role="status">{STATE_LABEL[orbState]}</div>
+            <div className="stage-status" role="status">{send.isPending ? `${progress} ${elapsed}s` : STATE_LABEL[orbState]}</div>
             <p className={`stage-caption ${voice.listening ? 'live' : ''}`}>{liveCaption || `Namaste${user ? `, ${user.name.split(' ')[0]}` : ''}! Ask me about ${family?.name || 'your family'}'s money.`}</p>
 
             <div className="stage-controls">
@@ -117,6 +135,7 @@ export default function Assistant() {
                 {voice.listening ? <MicOff size={30} /> : <Mic size={30} />}
               </button>
               {voice.speaking && <button className="btn btn-secondary btn-sm" onClick={voice.stopSpeaking}><Square size={14} /> Stop</button>}
+              {send.isPending && <button className="btn btn-secondary btn-sm" onClick={cancel}><Square size={14} /> Cancel</button>}
             </div>
 
             <div className="stage-options">
@@ -173,7 +192,7 @@ export default function Assistant() {
               {send.isPending && (
                 <div className="bubble-row assistant">
                   <span className="icon-disc ic-violet avatar-dot"><Sparkles size={16} /></span>
-                  <div className="bubble assistant"><span className="typing"><i /><i /><i /></span> <span className="muted small">Checking your numbers…</span></div>
+                  <div className="bubble assistant"><span className="typing"><i /><i /><i /></span> <span className="muted small">{progress} <span className="num">{elapsed}s</span></span> <button className="btn btn-ghost btn-sm" onClick={cancel}>Cancel</button></div>
                 </div>
               )}
               <div ref={endRef} />
