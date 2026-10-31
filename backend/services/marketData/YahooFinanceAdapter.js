@@ -15,7 +15,7 @@ class YahooFinanceAdapter extends MarketDataAdapter {
 
   formatSymbol(symbol, exchange = 'NSE') {
     const s = (symbol || '').trim().toUpperCase();
-    if (s.endsWith('.NS') || s.endsWith('.BO')) return s;
+    if (s.startsWith('^') || s.endsWith('.NS') || s.endsWith('.BO')) return s; // ^NSEI etc. are indices
     return `${s}${exchange === 'BSE' ? '.BO' : '.NS'}`;
   }
 

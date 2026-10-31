@@ -186,8 +186,11 @@ async function removeMember(familyId, actorId, targetId, ip) {
 
 async function deleteFamily(familyId, actorId, ip) {
   await requireRole(familyId, actorId, 'owner');
-  await audit({ familyId, actorId, action: 'family.delete', entityType: 'family', entityId: familyId, ip });
+  // Lazy require: the context service depends on this module.
+  const meko = await require('./meko/contextService').deleteFamilyContext(familyId);
+  await audit({ familyId, actorId, action: 'family.delete', entityType: 'family', entityId: familyId, details: { mekoContext: meko }, ip });
   await db.query('DELETE FROM families WHERE id = $1', [familyId]);
+  return { meko };
 }
 
 module.exports = {

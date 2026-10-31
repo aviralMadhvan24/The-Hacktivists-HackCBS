@@ -8,6 +8,8 @@ const records = require('../services/recordsService');
 const analytics = require('../services/analyticsService');
 const proposals = require('../services/proposalService');
 const db = require('../db/pool');
+const context = require('../services/meko/contextService');
+const agent = require('../services/investmentAgent');
 
 const router = express.Router();
 const ip = (req) => req.ip;
@@ -68,6 +70,19 @@ router.get('/:fid/proposals/:pid/impact', wrap(async (req, res) => res.json({ su
 router.post('/:fid/proposals/:pid/comments', wrap(async (req, res) => res.status(201).json({ success: true, proposal: await proposals.comment(req.params.fid, uid(req), req.params.pid, req.body, ip(req)) })));
 router.post('/:fid/proposals/:pid/vote', wrap(async (req, res) => res.json({ success: true, proposal: await proposals.vote(req.params.fid, uid(req), req.params.pid, req.body, ip(req)) })));
 router.post('/:fid/proposals/:pid/withdraw', wrap(async (req, res) => res.json({ success: true, proposal: await proposals.withdraw(req.params.fid, uid(req), req.params.pid, ip(req)) })));
+
+// ---- Investment intelligence agent -------------------------------------------------
+router.post('/:fid/agent/evaluate', wrap(async (req, res) => res.json({ success: true, evaluation: await agent.evaluate(req.params.fid, uid(req), req.body, ip(req)) })));
+router.get('/:fid/agent/evaluations', wrap(async (req, res) => res.json({ success: true, evaluations: await agent.list(req.params.fid, uid(req)) })));
+router.get('/:fid/agent/evaluations/:eid', wrap(async (req, res) => res.json({ success: true, evaluation: await agent.get(req.params.fid, uid(req), req.params.eid) })));
+
+// ---- Contextual memory (Meko) ------------------------------------------------------
+router.get('/:fid/context', wrap(async (req, res) => res.json({ success: true, memories: await context.list(req.params.fid, uid(req), { kind: req.query.kind }) })));
+router.get('/:fid/context/search', wrap(async (req, res) => res.json({ success: true, ...(await context.search(req.params.fid, uid(req), req.query.q, { limit: Math.min(20, Number(req.query.limit) || 8) })) })));
+router.post('/:fid/context', wrap(async (req, res) => res.status(201).json({ success: true, ...(await context.add(req.params.fid, uid(req), req.body, ip(req))) })));
+router.post('/:fid/context/resync', wrap(async (req, res) => res.json({ success: true, results: await context.resync(req.params.fid, uid(req)) })));
+router.patch('/:fid/context/:mid', wrap(async (req, res) => res.json({ success: true, ...(await context.correct(req.params.fid, uid(req), req.params.mid, req.body, ip(req))) })));
+router.delete('/:fid/context/:mid', wrap(async (req, res) => { await context.remove(req.params.fid, uid(req), req.params.mid, ip(req)); res.json({ success: true }); }));
 
 // ---- Audit log (admins) ------------------------------------------------------------
 router.get('/:fid/audit', wrap(async (req, res) => {
