@@ -111,6 +111,7 @@ router.post('/auto', wrap(async (req, res) => {
       `INSERT INTO research_sources (id, user_id, ticker, company, ir_url) VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (user_id, ticker, ir_url) DO UPDATE SET company = EXCLUDED.company`, [randomUUID(), req.user.id, r.ticker, r.company, r.irUrl]);
   }
+  await require('../services/activity').concallSearch(req.user.id, { ticker: r.ticker, company: r.company, found: r.found, quarter: r.latest?.quarter, fiscalYear: r.latest?.fiscalYear });
   res.json({ success: true, ...r, transcripts: r.transcripts ? await markImported(req.user.id, r.transcripts) : [] });
 }));
 
@@ -193,6 +194,7 @@ router.post('/sources/:id/check', wrap(async (req, res) => {
   const transcripts = await markImported(req.user.id, r.transcripts);
   const summaryResult = { found: transcripts.length, notImported: transcripts.filter((t) => !t.importedAnalysisId).length };
   await db.query('UPDATE research_sources SET last_checked = now(), last_result = $2 WHERE id = $1', [rows[0].id, JSON.stringify(summaryResult)]);
+  await require('../services/activity').concallSearch(req.user.id, { ticker: rows[0].ticker, company: rows[0].company, found: transcripts.length > 0 });
   res.json({ success: true, ...r, transcripts, ticker: rows[0].ticker, company: rows[0].company });
 }));
 

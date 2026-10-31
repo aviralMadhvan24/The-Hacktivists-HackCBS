@@ -171,7 +171,10 @@ const reverseSchema = z.object({
 async function reverseStress(familyId, viewerId, body) {
   const input = validate(reverseSchema, body);
   const { position } = await positionFor(familyId, viewerId, input);
-  try { return stress.reverseStress(position, { variable: input.variable, condition: input.condition, baseShocks: input.baseShocks, assumptions: input.assumptions || {} }); } catch (e) { throw engineError(e); }
+  let result;
+  try { result = stress.reverseStress(position, { variable: input.variable, condition: input.condition, baseShocks: input.baseShocks, assumptions: input.assumptions || {} }); } catch (e) { throw engineError(e); }
+  await require('./activity').breakingPoint(viewerId, { result });
+  return result;
 }
 
 const decisionSchema = z.discriminatedUnion('kind', [
@@ -185,7 +188,10 @@ const decisionSchema = z.discriminatedUnion('kind', [
 async function whatIf(familyId, viewerId, body) {
   const decision = validate(decisionSchema, body?.decision);
   const { position } = await positionFor(familyId, viewerId, body || {});
-  try { return evaluateDecision(position, decision); } catch (e) { throw engineError(e); }
+  let result;
+  try { result = evaluateDecision(position, decision); } catch (e) { throw engineError(e); }
+  await require('./activity').whatIf(viewerId, { decision, result });
+  return result;
 }
 
 async function saveSimulation(familyId, viewerId, scope, kind, name, input, output, ip) {

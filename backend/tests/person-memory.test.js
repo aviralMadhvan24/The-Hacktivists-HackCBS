@@ -130,3 +130,20 @@ test('two actions at the same moment create only one datapack for a person', asy
   assert.equal(m.storage, 'own datapack');
   assert.equal(m.memories.length, 3);
 });
+
+test('what-if checks, breaking-point tests and concall searches are remembered', async () => {
+  const g = await api.newUser('pg');
+  await call('POST', '/api/me/consents', { token: g.token, body: { scope: 'meko_context', granted: true } });
+  const fid = (await call('POST', '/api/families', { token: g.token, body: { name: 'G Family' } })).body.family.id;
+  await call('POST', `/api/families/${fid}/accounts`, { token: g.token, body: { name: 'Savings', kind: 'savings', value: 500000, owners: [{ userId: g.id, sharePct: 100 }] } });
+  await call('POST', `/api/families/${fid}/cashflows`, { token: g.token, body: { direction: 'expense', category: 'household', name: 'Living', amount: 50000, owners: [{ userId: g.id, sharePct: 100 }] } });
+  const w = await call('POST', `/api/families/${fid}/whatif`, { token: g.token, body: { decision: { kind: 'purchase', amount: 900000 } } });
+  assert.equal(w.status, 200, JSON.stringify(w.body));
+  const r = await call('POST', `/api/families/${fid}/stress/reverse`, { token: g.token, body: { variable: 'one_time_expense', condition: { type: 'runway_below', months: 3 } } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  await require('../services/activity').concallSearch(g.id, { ticker: 'TCS', company: 'Tata Consultancy Services', found: false });
+  const texts = (await memory(g)).body.memories.map((m) => m.text).join('\n');
+  assert.match(texts, /what would happen if I went ahead with a ₹9,00,000 purchase/);
+  assert.match(texts, /I tested my breaking point in FinSight: A one-time emergency expense/);
+  assert.match(texts, /latest earnings call of Tata Consultancy Services \(TCS\) in FinSight; it wasn't available automatically/);
+});

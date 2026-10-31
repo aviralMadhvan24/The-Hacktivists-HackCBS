@@ -7,8 +7,11 @@
 1. **Chats with the FinSight chatbot.** Every question and answer is sent with
    `conversation_add_message`. Meko extracts memories from what the user said.
 2. **Activity in the app.** Short first-person notes such as "I ran a family stress test:
-   market fall 30%…" are sent to the same conversation after a stress test, investment
-   evaluation, proposal, vote, Zerodha sync, concall analysis or document upload.
+   market fall 30%…" are sent to the same conversation after: a stress test, a what-if
+   decision check, a breaking-point test, an investment evaluation, a proposal or vote, a
+   Zerodha sync, a concall search or analysis, a document upload, or records added from a
+   document. Record edits, settings and other routine clicks are deliberately not sent: the
+   numbers live in the database, and noise would crowd out useful memories.
 
 Users can **see** their memories and **forget** any of them (Memory page,
 `GET/DELETE /api/me/memory`). Nobody can type or edit a memory. The old
