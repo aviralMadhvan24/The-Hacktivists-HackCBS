@@ -19,7 +19,7 @@ const LEVEL_TONE: Record<string, 'good' | 'warn' | 'bad' | 'info' | 'neutral'> =
 
 export default function Invest() {
   const { familyId } = useSession();
-  const [form, setForm] = useState({ symbol: '', amount: '', fundFrom: 'liquid', notes: '' });
+  const [form, setForm] = useState(() => ({ symbol: (new URLSearchParams(window.location.search).get('symbol') || '').toUpperCase().slice(0, 30), amount: '', fundFrom: 'liquid', notes: '' }));
   const [openId, setOpenId] = useState<string | null>(null);
   const qc = useQueryClient();
   const run = useMutation({
@@ -88,14 +88,6 @@ function EvaluationView({ e }: { e: any }) {
     }),
     onSuccess: (r) => nav(`/decisions/${r.proposal.id}`),
   });
-  const remember = useMutation({
-    mutationFn: () => api.post(`/families/${familyId}/context`, {
-      kind: 'investment_reasoning', title: `${f.request.symbol}: ${OVERALL[e.overall]?.label}`,
-      body: `${n.status === 'ok' ? n.summary : ''} Checks: ${f.checks.filter((c: any) => c.level !== 'ok').map((c: any) => c.text).join(' ')} Score impact ${signed(f.impact.scoreDelta)}.`.trim().slice(0, 3900),
-      sources: e.sources.slice(0, 10).map((s: any) => ({ label: `${s.label}: ${s.detail}`.slice(0, 200), at: String(s.at || '').slice(0, 40) })),
-      related: { type: 'evaluation', id: e.id },
-    }),
-  });
   return (
     <div className="stack">
       <Notice tone={OVERALL[e.overall]?.tone === 'bad' ? 'bad' : OVERALL[e.overall]?.tone === 'warn' ? 'warn' : 'good'}>
@@ -103,11 +95,10 @@ function EvaluationView({ e }: { e: any }) {
           <span><strong>{f.request.symbol}</strong> · {inr(f.request.amount)} · <strong>{OVERALL[e.overall]?.label}</strong></span>
           <span className="row">
             <Button size="sm" variant="secondary" onClick={() => propose.mutate()} loading={propose.isPending}>Propose to family</Button>
-            <Button size="sm" variant="ghost" onClick={() => remember.mutate()} loading={remember.isPending} disabled={remember.isSuccess}>{remember.isSuccess ? 'Saved to memory' : 'Save reasoning to memory'}</Button>
           </span>
         </div>
       </Notice>
-      {(propose.error || remember.error) && <Notice tone="bad">{errorMessage(propose.error || remember.error)}</Notice>}
+      {propose.error && <Notice tone="bad">{errorMessage(propose.error)}</Notice>}
 
       <div className="grid grid-2">
         <Card title="What the agent checked" subtitle="Rule-based and transparent">

@@ -39,9 +39,14 @@ export interface Position {
   netWorth: number;
   cashflow: {
     monthlyIncome: number; essentialExpenses: number; discretionaryExpenses: number; monthlyExpenses: number; monthlyEmi: number;
-    monthlyOutflows: number; essentialOutflows: number; monthlySavings: number; savingsRatePct: number | null; netBurn: number;
+    monthlyOutflows: number; essentialOutflows: number; monthlySavings: number; savingsRatePct: number | null; netBurn: number; incomeByUser?: Record<string, number>;
   };
   runway: { state: string; currentBurnMonths: number | null; ifIncomeStopsMonths: number | null; ifIncomeStopsEssentialOnlyMonths: number | null; withSemiLiquidMonths: number | null };
+  /** Scope-weighted investment positions (holdings and equity in funds). */
+  positions?: { accountId: string; symbol: string | null; name: string; sector: string; instrument: string; diversified: boolean; value: number; equityValue: number }[];
+  /** Accounts visible to the viewer, weighted by the viewer's scope. */
+  accounts?: { id: string; name: string; kind: string; liquidity: string; weight: number; value: number }[];
+  liabilityItems?: { id: string; name: string; kind: string; weight: number; outstanding: number; emi: number; rateType: string }[];
 }
 export interface ScoreChange { delta: number | null; summary: string; changes: { pillar: string; name: string; delta: number; explanation: string }[]; comparedTo?: string }
 export interface Dashboard {

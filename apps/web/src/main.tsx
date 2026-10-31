@@ -6,6 +6,7 @@ import { SessionProvider } from './lib/session';
 import { ApiError } from './lib/api';
 import App from './App';
 import './styles.css';
+import './premium.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {

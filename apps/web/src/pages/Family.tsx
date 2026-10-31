@@ -1,11 +1,96 @@
-import { useState, type FormEvent } from 'react';
+import { lazy, Suspense, useMemo, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Trash2 } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { isAdmin, useSession } from '../lib/session';
-import { dateTime, label } from '../lib/format';
+import { dateTime, inr, inrCompact, label } from '../lib/format';
+import type { Account, Dashboard, Liability } from '../lib/types';
+import { hasWebGL } from '../lib/webgl';
+import type { NetHover, NetItem, NetMember } from '../components/three/FamilyNetworkScene';
 import { Badge, Button, Card, Field, Loading, Notice } from '../components/ui';
 import { PageHeader } from '../App';
+
+const FamilyNetworkScene = lazy(() => import('../components/three/FamilyNetworkScene'));
+const MEMBER_HEX = ['#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899', '#10B981', '#06B6D4', '#EF4444', '#84CC16'];
+
+/** 3D network + member cards, from records the viewer is allowed to see. */
+function FamilyMap() {
+  const { family, familyId, user } = useSession();
+  const accounts = useQuery({ queryKey: ['records', familyId, 'accounts'], queryFn: () => api.get<{ accounts: Account[] }>(`/families/${familyId}/accounts`).then((r) => r.accounts) });
+  const loans = useQuery({ queryKey: ['records', familyId, 'liabilities'], queryFn: () => api.get<{ liabilities: Liability[] }>(`/families/${familyId}/liabilities`).then((r) => r.liabilities) });
+  const dash = useQuery({ queryKey: ['dashboard', familyId, 'scope=family'], queryFn: () => api.get<Dashboard>(`/families/${familyId}/dashboard?scope=family`) });
+  const [hover, setHover] = useState<NetHover>(null);
+  const webgl = useMemo(hasWebGL, []);
+  if (!family) return null;
+  const members: NetMember[] = family.members.map((m, i) => ({ id: m.id, name: m.name, color: MEMBER_HEX[i % MEMBER_HEX.length] }));
+  const items: NetItem[] = [
+    ...(accounts.data || []).map((a) => ({ id: a.id, label: a.name, kind: 'asset' as const, value: a.value || 0, owners: a.owners.map((o) => o.userId) })),
+    ...(loans.data || []).map((l) => ({ id: l.id, label: l.name, kind: 'debt' as const, value: l.outstanding || 0, owners: l.owners.map((o) => o.userId) })),
+  ];
+  const shareOf = (owners: { userId: string; sharePct: number }[], uid: string) => (owners.find((o) => o.userId === uid)?.sharePct || 0) / 100;
+  const stats = family.members.map((m) => ({
+    m,
+    assets: (accounts.data || []).reduce((s, a) => s + (a.value || 0) * shareOf(a.owners, m.id), 0),
+    debt: (loans.data || []).reduce((s, l) => s + (l.outstanding || 0) * shareOf(l.owners, m.id), 0),
+    shared: (accounts.data || []).filter((a) => a.owners.length > 1 && a.owners.some((o) => o.userId === m.id)).length,
+    income: dash.data?.position.cashflow.incomeByUser?.[m.id] ?? null,
+  }));
+  const sharedCount = items.filter((i) => i.owners.length > 1).length;
+  const nameOf = (uid: string) => family.members.find((m) => m.id === uid)?.name || 'Someone outside the family';
+  return (
+    <>
+      <section className="fam-hero reveal" aria-label="Family financial network">
+        <div className="fam-head">
+          <h2>{family.name}</h2>
+          <p>{family.members.length} member{family.members.length === 1 ? '' : 's'} · {items.length} accounts & loans you can see · {sharedCount} shared</p>
+        </div>
+        <div className="fam-scene" style={{ position: 'relative' }}>
+          {webgl && items.length + members.length > 0 && (
+            <Suspense fallback={null}>
+              <FamilyNetworkScene members={members} items={items} onHover={setHover}
+                hovered={hover ? (hover.type === 'member' ? hover.member.id : hover.item.id) : null} />
+            </Suspense>
+          )}
+          {hover && (
+            <div className="cc-tip" role="status">
+              {hover.type === 'member' ? (
+                <><span className="small">Member</span><strong>{hover.member.name}</strong>
+                  <span className="small">{inrCompact(stats.find((s) => s.m.id === hover.member.id)?.assets || 0)} assets · {inrCompact(stats.find((s) => s.m.id === hover.member.id)?.debt || 0)} loans</span></>
+              ) : (
+                <><span className="small">{hover.item.kind === 'debt' ? 'Loan' : 'Account'}{hover.item.owners.length > 1 ? ' · shared' : ''}</span><strong>{hover.item.label}</strong>
+                  <span className="small">{inr(hover.item.value)} · {hover.item.owners.map(nameOf).join(', ')}</span></>
+              )}
+            </div>
+          )}
+          <div className="fam-legend">
+            <span><i style={{ background: '#3B82F6' }} />Members</span>
+            <span><i style={{ background: '#34D399' }} />Own account</span>
+            <span><i style={{ background: '#22D3EE' }} />Shared account</span>
+            <span><i style={{ background: '#F87171', borderRadius: 2 }} />Loan</span>
+            <span>Lines = ownership · moving dots = money flow</span>
+          </div>
+        </div>
+      </section>
+      <div className="member-grid reveal reveal-2">
+        {stats.map(({ m, assets, debt, shared, income }, i) => (
+          <div key={m.id} className="member-card">
+            <div className="who">
+              <span className="av" style={{ background: MEMBER_HEX[i % MEMBER_HEX.length] }}>{m.name.slice(0, 1).toUpperCase()}</span>
+              <div className="break" style={{ minWidth: 0 }}><strong>{m.name}{m.id === user?.id ? ' (you)' : ''}</strong><div className="small muted">{label(m.role)}</div></div>
+            </div>
+            <dl>
+              <dt>Share of assets</dt><dd>{inrCompact(assets)}</dd>
+              <dt>Share of loans</dt><dd>{inrCompact(debt)}</dd>
+              <dt>Monthly income</dt><dd>{income == null ? '—' : inrCompact(income)}</dd>
+              <dt>Shared accounts</dt><dd>{shared}</dd>
+            </dl>
+          </div>
+        ))}
+      </div>
+      <p className="small muted" style={{ margin: 0 }}>Only records you're allowed to see are shown. Private records of other members are never included.</p>
+    </>
+  );
+}
 
 export default function FamilyPage() {
   const { family, familyId, user } = useSession();
@@ -34,6 +119,7 @@ export default function FamilyPage() {
     <>
       <PageHeader title="Family" />
       <div className="content stack">
+        <FamilyMap />
         <div className="grid grid-2">
           <Card title="Members" subtitle={`You are ${label(family.myRole).toLowerCase()} of ${family.name}`}>
             <div className="table-wrap">

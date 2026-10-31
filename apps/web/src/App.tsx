@@ -1,5 +1,7 @@
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Activity, Brain, FileText, FolderUp, Gauge, LayoutGrid, LineChart, LogOut, MessageCircle, Scale, Search, Settings as SettingsIcon, Users, Wallet } from 'lucide-react';
+import { Activity, Gauge, LayoutGrid, LogOut, MessageCircle, Search, Wallet } from 'lucide-react';
+import { NAV, NAV_GROUPS } from './lib/nav';
+import AppHeader, { SearchPalette } from './components/AppHeader';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSession } from './lib/session';
 import { Loading, Modal } from './components/ui';
@@ -18,20 +20,7 @@ import Memory from './pages/Memory';
 import Assistant from './pages/Assistant';
 import Documents from './pages/Documents';
 
-const NAV = [
-  { to: '/', label: 'Ask FinSight', icon: MessageCircle, end: true },
-  { to: '/overview', label: 'Overview', icon: Gauge },
-  { to: '/records', label: 'Money & records', icon: Wallet },
-  { to: '/stress', label: 'Stress test', icon: Activity },
-  { to: '/decisions', label: 'Decisions', icon: Scale },
-  { to: '/invest', label: 'Evaluate investment', icon: Search },
-  { to: '/research', label: 'Company research', icon: FileText },
-  { to: '/forecast', label: 'Price forecast', icon: LineChart },
-  { to: '/documents', label: 'Documents', icon: FolderUp },
-  { to: '/memory', label: 'Memory', icon: Brain },
-  { to: '/family', label: 'Family', icon: Users },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
-];
+// Navigation lives in lib/nav.ts (shared with the search palette).
 
 // Bottom bar on phones: the four most used destinations plus "More".
 const TAB_BAR = [
@@ -46,7 +35,7 @@ function Brand() {
   return (
     <div className="brand">
       <img className="brand-mark" src="/favicon.svg" alt="" />
-      <span><span style={{ color: 'var(--text)' }}>Fin</span><span className="brand-name">Sight</span></span>
+      <span><span className="brand-word">Fin</span><span className="brand-name">Sight</span></span>
     </div>
   );
 }
@@ -64,6 +53,7 @@ function FamilySwitcher() {
 function Shell({ children }: { children: ReactNode }) {
   const { user, signOut } = useSession();
   const [more, setMore] = useState(false);
+  const [search, setSearch] = useState(false);
   const loc = useLocation();
   useEffect(() => { setMore(false); }, [loc.pathname]);
   return (
@@ -71,12 +61,17 @@ function Shell({ children }: { children: ReactNode }) {
       <aside className="sidebar">
         <Brand />
         <div style={{ padding: '0 4px' }}>
-          <div className="nav-section" style={{ padding: '0 0 6px 4px' }}>Family</div>
+          <div className="nav-section" style={{ padding: '0 0 6px 4px' }}>Workspace</div>
           <FamilySwitcher />
         </div>
         <nav className="nav" aria-label="Main">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end}><Icon size={18} aria-hidden /> {label}</NavLink>
+          {NAV_GROUPS.map((g) => (
+            <div key={g.title} role="group" aria-label={g.title}>
+              <div className="nav-section">{g.title}</div>
+              {g.items.map(({ to, label, icon: Icon, end }) => (
+                <NavLink key={to} to={to} end={end}><Icon size={17} aria-hidden /> {label}</NavLink>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-foot stack-sm">
@@ -88,10 +83,15 @@ function Shell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <div className="main">
+        <AppHeader />
         <div className="mobile-head">
           <Brand />
-          <FamilySwitcher />
+          <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+            <button className="hdr-btn" aria-label="Search" onClick={() => setSearch(true)}><Search size={17} /></button>
+            <FamilySwitcher />
+          </div>
         </div>
+        <SearchPalette open={search} onClose={() => setSearch(false)} />
         {children}
         <nav className="mobile-nav" aria-label="Main">
           {TAB_BAR.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end}><Icon size={22} aria-hidden />{label}</NavLink>)}

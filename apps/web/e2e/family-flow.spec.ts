@@ -44,6 +44,8 @@ test.describe.serial('family flow', () => {
 
     await page.getByRole('link', { name: 'Family', exact: true }).first().click();
     await page.getByLabel('Email').fill(ravi.email);
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: `${SHOTS}/family-desktop.png` });
     await page.getByRole('button', { name: 'Create invitation' }).click();
     const code = page.locator('code');
     await expect(code).toContainText('invite=');

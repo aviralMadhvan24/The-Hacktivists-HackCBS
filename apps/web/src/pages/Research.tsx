@@ -2,7 +2,6 @@ import { Fragment, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ExternalLink, HelpCircle, Trash2 } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
-import { useSession } from '../lib/session';
 import { dateTime } from '../lib/format';
 import { Badge, Button, Card, Empty, Field, Loading, Notice, Tabs } from '../components/ui';
 import { PageHeader } from '../App';
@@ -60,18 +59,9 @@ function Quote({ text, verified }: { text: string; verified?: boolean }) {
 }
 
 function AnalysisDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { familyId } = useSession();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['concall', id], queryFn: () => api.get<{ analysis: any; meta: any }>(`/concall/${id}`) });
   const del = useMutation({ mutationFn: () => api.del(`/concall/${id}`), onSuccess: () => { qc.invalidateQueries({ queryKey: ['concalls'] }); onBack(); } });
-  const remember = useMutation({
-    mutationFn: () => api.post(`/families/${familyId}/context`, {
-      kind: 'company_research', title: `${q.data!.meta.company} ${q.data!.meta.quarter} ${q.data!.meta.fiscalYear} concall`,
-      body: `${q.data!.analysis.executiveSummary} Guidance: ${q.data!.analysis.growthAndGuidance?.growthGuidance || 'not stated'}. (AI summary of the transcript.)`.slice(0, 3900),
-      sources: [{ label: q.data!.meta.source || 'Concall transcript', ...(q.data!.meta.sourceUrl ? { url: q.data!.meta.sourceUrl } : {}), at: String(q.data!.meta.createdAt).slice(0, 40) }],
-      related: { type: 'concall', id },
-    }),
-  });
   if (q.isLoading) return <Loading />;
   if (q.error) return <Notice tone="bad">{errorMessage(q.error)}</Notice>;
   const a = q.data!.analysis; const m = q.data!.meta;
@@ -80,24 +70,23 @@ function AnalysisDetail({ id, onBack }: { id: string; onBack: () => void }) {
       <div className="row-between">
         <Button variant="ghost" size="sm" onClick={onBack}>← All analyses</Button>
         <span className="row">
-          <Button size="sm" variant="secondary" onClick={() => remember.mutate()} loading={remember.isPending} disabled={remember.isSuccess}>{remember.isSuccess ? 'Saved to family memory' : 'Save summary to family memory'}</Button>
+          <span className="small muted">FinSight remembers that you analysed this call.</span>
           <Button size="sm" variant="ghost" onClick={() => confirm('Delete this analysis?') && del.mutate()}><Trash2 size={14} /> Delete</Button>
         </span>
       </div>
-      {remember.error && <Notice tone="bad">{errorMessage(remember.error)}</Notice>}
       <Card title={`${m.company} (${m.ticker}) · ${m.quarter} ${m.fiscalYear}`} subtitle={<>{m.source}{/^https?:\/\//i.test(m.sourceUrl || '') && <> · <a href={m.sourceUrl} target="_blank" rel="noopener noreferrer">Source <ExternalLink size={11} /></a></>} · analysed {dateTime(m.createdAt)}</>}>
-        <Notice tone="info">Text in quotation marks is checked against the transcript. Everything else on this page is AI interpretation.</Notice>
-        <p>{a.executiveSummary}</p>
+        <Notice tone="info"><span className="src-tag company">Company statement</span> = verbatim quote checked against the transcript. <span className="src-tag ai">AI interpretation</span> = FinSight's summary, not the company's words.</Notice>
+        <div className="ai-block"><span className="src-tag ai">AI interpretation</span><p style={{ margin: '6px 0 0' }}>{a.executiveSummary}</p></div>
         {a.quoteVerification && <p className="small muted">{a.quoteVerification.verified} of {a.quoteVerification.total} quotes found verbatim. {a.quoteVerification.note}</p>}
         {a.comparedWith && <p className="small"><strong>Compared with {a.comparedWith}:</strong> {a.growthAndGuidance?.guidanceComparison}</p>}
       </Card>
       <div className="grid grid-2">
-        <Card title="Financial performance (AI summary)">
+        <Card title="Financial performance" actions={<span className="src-tag ai">AI interpretation</span>}>
           <dl className="kv" style={{ gridTemplateColumns: 'auto minmax(0,1fr)' }}>
             {Object.entries(a.financialPerformance || {}).map(([k, v]) => <Fragment key={k}><dt>{k.replace(/([A-Z])/g, ' $1').toLowerCase()}</dt><dd style={{ textAlign: 'left', fontWeight: 400 }}>{String(v)}</dd></Fragment>)}
           </dl>
         </Card>
-        <Card title="Growth and guidance (AI summary)">
+        <Card title="Growth and guidance" actions={<span className="src-tag ai">AI interpretation</span>}>
           <dl className="kv" style={{ gridTemplateColumns: 'auto minmax(0,1fr)' }}>
             {Object.entries(a.growthAndGuidance || {}).map(([k, v]) => <Fragment key={k}><dt>{k.replace(/([A-Z])/g, ' $1').toLowerCase()}</dt><dd style={{ textAlign: 'left', fontWeight: 400 }}>{String(v)}</dd></Fragment>)}
           </dl>
@@ -106,15 +95,26 @@ function AnalysisDetail({ id, onBack }: { id: string; onBack: () => void }) {
       <Card title="Findings">
         <ul className="list-plain">{(a.findings || []).map((f: any, i: number) => (
           <li key={i}><Badge tone={CLASS_TONE[f.classification]}>{CLASS_LABEL[f.classification] || f.classification}</Badge> <strong>{f.topic}</strong> <span className="small muted">· {f.location}</span>
-            <div className="small">{f.explanation}</div>{f.exactQuote && <Quote text={f.exactQuote} verified={f.quoteVerified} />}</li>
+            <div className="small" style={{ marginTop: 4 }}><span className="src-tag ai">AI</span> {f.explanation}</div>{f.exactQuote && <Quote text={f.exactQuote} verified={f.quoteVerified} />}</li>
         ))}</ul>
       </Card>
       {(a.managementStatements || []).length > 0 && (
-        <Card title="Management statements">
+        <Card title="Management statements" subtitle="In the company's own words" actions={<span className="src-tag company">Company statement</span>}>
           <ul className="list-plain">{a.managementStatements.map((s: any, i: number) => <li key={i}><strong className="small">{s.speaker}</strong> <span className="small muted">· {s.location}</span><Quote text={s.quote} verified={s.quoteVerified} /></li>)}</ul>
         </Card>
       )}
-      {(a.keyUncertainties || []).length > 0 && <Card title="Open questions"><ul style={{ margin: 0, paddingLeft: 18 }}>{a.keyUncertainties.map((u: string) => <li key={u}>{u}</li>)}</ul></Card>}
+      {(a.analystQuestions || []).length > 0 && (
+        <Card title="Analyst Q&A" subtitle="Summaries of each exchange (paraphrased by AI, not quotes)">
+          <ul className="list-plain">{a.analystQuestions.map((x: any, i: number) => (
+            <li key={i} className="stack-sm" style={{ gap: 6 }}>
+              <div><span className="src-tag analyst">Analyst question</span> <span className="small muted">{x.analystNameAndFirm}</span><div className="small" style={{ marginTop: 4 }}>{x.questionSummary}</div></div>
+              <div><span className="src-tag company">Management response</span> <span className="small muted">(summary)</span><div className="small" style={{ marginTop: 4 }}>{x.managementAnswerSummary}</div></div>
+              {x.keyTakeaway && <div className="small"><span className="src-tag ai">AI takeaway</span> {x.keyTakeaway}</div>}
+            </li>
+          ))}</ul>
+        </Card>
+      )}
+      {(a.keyUncertainties || []).length > 0 && <Card title="Open questions" actions={<span className="src-tag ai">AI interpretation</span>}><ul style={{ margin: 0, paddingLeft: 18 }}>{a.keyUncertainties.map((u: string) => <li key={u}>{u}</li>)}</ul></Card>}
       <p className="small muted">{a.portfolioConnection?.disclaimer}</p>
     </div>
   );
