@@ -14,7 +14,8 @@ const auth = require('../services/authService');
 const families = require('../services/familyService');
 const records = require('../services/recordsService');
 const proposals = require('../services/proposalService');
-const context = require('../services/meko/contextService');
+const context = require('../services/meko/contextService'); // legacy cleanup only
+const person = require('../services/meko/personMemory');
 const market = require('../services/marketData');
 const zerodha = require('../services/zerodhaService');
 const { randomUUID } = require('crypto');
@@ -46,7 +47,7 @@ async function resetDemo() {
     `SELECT f.id FROM families f WHERE f.created_by = ANY($1::uuid[])
        AND NOT EXISTS (SELECT 1 FROM family_members m WHERE m.family_id = f.id AND NOT (m.user_id = ANY($1::uuid[])))`, [ids]);
   for (const f of fams.rows) await context.deleteFamilyContext(f.id);
-  for (const id of ids) await context.deleteAllForUser(id);
+  for (const id of ids) { await person.deleteAllForUser(id); await context.deleteAllForUser(id).catch(() => {}); }
   await db.query('DELETE FROM families WHERE id = ANY($1::uuid[])', [fams.rows.map((f) => f.id)]);
   for (const t of ['sessions', 'consents', 'concall_analyses', 'research_sources', 'usage_counters', 'subscriptions', 'broker_connections', 'oauth_states', 'score_snapshots', 'agent_evaluations']) {
     const col = t === 'score_snapshots' ? 'viewer_id' : 'user_id';
@@ -164,20 +165,23 @@ async function seedSharma() {
   await proposals.comment(fid, arjun.id, stock.id, { body: 'Maybe the Nifty ETF instead? Less single-stock risk.' }, IP);
 
 
-  // Family context (Meko if enabled, otherwise local index)
-  const ctx = [
-    [rajesh, { kind: 'goal', title: 'Emergency fund target', body: 'Family goal: always keep at least 6 months of essential expenses in savings and FDs before any big purchase or investment.' }],
-    [priya, { kind: 'goal', title: "Daughter's college fund", body: 'Save for younger daughter’s engineering college in 2031; target roughly 25 lakh in today’s money.' }],
-    [rajesh, { kind: 'preference', title: 'Investment style', body: 'Prefer large-cap stocks and index funds. Avoid small caps, F&O and crypto. Keep any single stock under 15% of the portfolio.' }],
-    [arjun, { kind: 'decision', title: 'Car purchase postponed', body: 'Family rejected buying a 9 lakh car from savings in October 2026 because emergency cover would drop below 3 months. Revisit after a year.' }],
-    [priya, { kind: 'preference', title: 'Priya private note', body: 'Private: I want to keep my FD untouched as my personal safety net.', private: true }],
+  // Demo conversation history with the chatbot. Meko builds each person's memory
+  // from these turns itself (FinSight never writes memories directly).
+  const turns = [
+    [rajesh, 'Hamara family rule hai: koi bhi bada kharcha ya investment karne se pehle kam se kam 6 mahine ke zaroori kharche savings aur FD mein hone chahiye.', 'Samajh gaya, Rajesh ji. Main har decision mein 6 mahine ke emergency fund ka dhyan rakhunga.'],
+    [rajesh, 'I prefer large-cap stocks and index funds. No small caps, no F&O, no crypto, and no single stock above 15% of my portfolio.', 'Noted: large caps and index funds only, and a 15% single-stock cap.'],
+    [priya, 'Meri chhoti beti 2031 mein engineering college jayegi, uske liye aaj ke hisaab se lagbhag 25 lakh chahiye.', 'Theek hai Priya ji, 2031 ke liye 25 lakh ka college fund goal note kar liya.'],
+    [priya, 'My SBI FD is my personal safety net. I do not want it used for family expenses.', 'Understood, your FD stays separate as your personal safety net.'],
+    [arjun, 'Family ne October 2026 mein meri 9 lakh ki car wali proposal reject kar di kyunki emergency cover 3 mahine se neeche chala jata. Main ek saal baad dobara sochunga.', 'Samajh gaya Arjun, car ka plan ek saal baad dobara dekhenge.'],
   ];
-  let synced = 0;
-  for (const [u, body] of ctx) {
-    const r = await context.add(fid, u.id, body, IP);
-    if (r.sync.status === 'synced') synced++;
+  let sent = 0;
+  for (const [u, q, a] of turns) {
+    const r = await person.recordChatTurn(u.id, q, a, { source: 'demo_seed' });
+    if (r.status === 'sent') sent++;
   }
-  return { fid, live, ctx: ctx.length, synced };
+  // Family planning: Rajesh, Priya and Arjun share their memory with the family chat. Dadi does not.
+  for (const u of [rajesh, priya, arjun]) await person.setSharing(fid, u.id, true, IP);
+  return { fid, live, ctx: turns.length, synced: sent };
 }
 
 async function seedMehta() {
@@ -222,7 +226,7 @@ async function main() {
     console.log('Demo users already exist. Run with --reset to recreate them and their families.');
   } else {
     const s = await seedSharma();
-    console.log(`Demo Sharma Family: 4 members, ${s.live}/6 simulated-Zerodha holdings priced live, ${s.ctx} memories (${s.synced} synced to Meko).`);
+    console.log(`Demo Sharma Family: 4 members, ${s.live}/6 simulated-Zerodha holdings priced live, ${s.ctx} chat turns (${s.synced} sent to Meko; Meko extracts the memories).`);
     if (USERS.rohan) {
       const m = await seedMehta();
       console.log(`Demo Mehta Family: 2 members, ${m.live}/2 Groww + ${m.liveZ}/2 simulated-Zerodha holdings priced live.`);

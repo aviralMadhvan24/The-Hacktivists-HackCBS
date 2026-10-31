@@ -36,4 +36,4 @@ async function newUser(label = 'user') {
   return { id: r.body.user.id, email, token: r.body.token, name: label };
 }
 
-module.exports = { start, stop, call, newUser };
+module.exports = { start, stop, call, newUser, baseUrl: () => base };

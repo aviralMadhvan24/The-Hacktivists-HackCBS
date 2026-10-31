@@ -28,7 +28,7 @@ const defaultDeps = () => ({
   market: require('./marketData'),
   fundamentals: require('./marketData/fundamentals'),
   llm: require('../lib/llm'),
-  context: require('./meko/contextService'),
+  memory: require('./meko/personMemory'),
 });
 
 const inputSchema = z.object({
@@ -158,7 +158,7 @@ async function evaluate(familyId, userId, body, ip, deps = defaultDeps()) {
     const { rows: concalls } = await db.query(
       `SELECT id, quarter, fiscal_year, created_at, analysis->'executiveSummary' AS summary, analysis->'quoteVerification' AS qv
        FROM concall_analyses WHERE user_id = $1 AND ticker = $2 ORDER BY created_at DESC LIMIT 3`, [userId, input.symbol]);
-    const ctx = await safe('Family context', () => deps.context.search(familyId, userId, `${input.symbol} ${fundamentals?.name || ''} ${sector} investment decision risk`, { limit: 5 }), gaps);
+    const ctx = await safe('Family context', () => deps.memory.search(userId, `${input.symbol} ${fundamentals?.name || ''} ${sector} investment decision risk`, { scope: 'family', familyId, limit: 5 }), gaps);
 
     const facts = {
       request: { symbol: input.symbol, exchange: input.exchange, amount: input.amount, fundFrom: input.fundFrom, horizonYears: input.horizonYears, userNotes: input.notes || null },
@@ -173,7 +173,7 @@ async function evaluate(familyId, userId, body, ip, deps = defaultDeps()) {
       impact: { before: impact.before, after: impact.after, scoreDelta: impact.scoreDelta, pillarDeltas: impact.pillarDeltas, diversification: impact.diversification, crash30: impact.stressTest },
       correlations, checks, scenarios, alternatives,
       research: concalls.map((c) => ({ quarter: `${c.quarter} ${c.fiscal_year}`, summary: c.summary, quotesVerified: c.qv })),
-      familyContext: (ctx?.results || []).map((m) => ({ kind: m.kind, title: m.title, text: m.body, date: m.createdAt })),
+      familyContext: (ctx?.memories || []).filter((m) => m.text).map((m) => ({ text: m.text, person: m.person, date: m.date })),
       dataGaps: gaps,
     };
 
@@ -209,6 +209,7 @@ async function evaluate(familyId, userId, body, ip, deps = defaultDeps()) {
     await db.query('INSERT INTO agent_evaluations (id, family_id, user_id, symbol, exchange, amount, result) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [result.id, familyId, userId, input.symbol, input.exchange, input.amount, JSON.stringify(result)]);
     await audit({ familyId, actorId: userId, action: 'agent.evaluate', entityType: 'evaluation', entityId: result.id, details: { symbol: input.symbol, ai: narrative.status }, ip });
+    await require('./activity').evaluation(userId, { symbol: input.symbol, amount: input.amount });
     return result;
   } catch (err) {
     await usage.release();

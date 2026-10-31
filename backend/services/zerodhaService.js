@@ -287,6 +287,7 @@ async function syncToFamily(userId, { familyId, visibility = 'private' }, ip) {
     await audit({ familyId, actorId: userId, action: 'broker.sync', entityType: 'account', entityId: accountId, details: { holdings: symbols.length, removed: removed.rowCount, simulated: Boolean(connection.simulated) }, ip }, c);
     return { accountId, holdingsSynced: symbols.length, holdingsRemoved: removed.rowCount };
   });
+  await require('./activity').brokerSync(userId, { holdings: result.holdingsSynced, simulated: Boolean(connection.simulated) });
   return { ...result, funds: portfolio.funds, fetchedAt: portfolio.fetchedAt, simulated: Boolean(connection.simulated),
     note: connection.simulated
       ? 'Simulated demo data: sample holdings, priced at live market prices where available. Disconnecting removes this simulated account.'

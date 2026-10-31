@@ -83,8 +83,9 @@ router.post('/delete', wrap(async (req, res) => {
   if (blocking.length) throw conflict(`Transfer ownership of ${blocking.map((f) => f.name).join(', ')} before deleting your account.`);
 
   // Meko memories are removed first so a failure leaves the account intact and retryable.
-  const meko = require('../services/meko/contextService');
-  const mekoResult = await meko.deleteAllForUser(id).catch((err) => ({ ok: false, error: err.message }));
+  const mekoResult = await require('../services/meko/personMemory').deleteAllForUser(id).catch((err) => ({ ok: false, error: err.message }));
+  // Older family-context memories (before person memory) are removed too.
+  await require('../services/meko/contextService').deleteAllForUser(id).catch(() => {});
   if (mekoResult && mekoResult.ok === false && mekoResult.required) {
     throw badRequest(`Could not delete stored AI context: ${mekoResult.error}. Please retry.`);
   }

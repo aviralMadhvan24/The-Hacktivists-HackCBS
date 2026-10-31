@@ -63,6 +63,7 @@ async function create(familyId, actorId, body, ip) {
     [id, familyId, actorId, input.kind, input.title, input.description || null, input.amount || null,
       JSON.stringify(decision || {}), impact ? JSON.stringify(impact) : null, required]);
   await audit({ familyId, actorId, action: 'proposal.create', entityType: 'proposal', entityId: id, details: { kind: input.kind, title: input.title }, ip });
+  await require('./activity').proposal(actorId, { title: input.title, amount: input.amount });
   return get(familyId, actorId, id);
 }
 
@@ -139,6 +140,7 @@ async function comment(familyId, actorId, id, body, ip) {
 async function vote(familyId, actorId, id, body, ip) {
   const m = await familyService.requireRole(familyId, actorId, 'member');
   const { vote: v, note } = validate(z.object({ vote: z.enum(['approve', 'reject']), note: z.string().trim().max(1000).optional() }).strict(), body);
+  let voteNote = null;
   await db.withTransaction(async (c) => {
     const { rows } = await c.query('SELECT * FROM proposals WHERE id = $1 AND family_id = $2 FOR UPDATE', [id, familyId]);
     const p = rows[0];
@@ -162,7 +164,9 @@ async function vote(familyId, actorId, id, body, ip) {
       await c.query('UPDATE proposals SET status = $2, decided_at = now(), updated_at = now() WHERE id = $1', [id, status]);
     }
     await audit({ familyId, actorId, action: 'proposal.vote', entityType: 'proposal', entityId: id, details: { vote: v, resultingStatus: status }, ip }, c);
+    voteNote = { title: p.title, vote: v, status };
   });
+  if (voteNote) await require('./activity').vote(actorId, voteNote);
   return get(familyId, actorId, id);
 }
 

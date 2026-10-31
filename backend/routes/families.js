@@ -2,13 +2,14 @@
 // Every route requires a session (mounted behind requireAuth) and checks the
 // caller's family role in the service layer.
 const express = require('express');
-const { wrap } = require('../lib/http');
+const { z } = require('zod');
+const { wrap, validate } = require('../lib/http');
 const families = require('../services/familyService');
 const records = require('../services/recordsService');
 const analytics = require('../services/analyticsService');
 const proposals = require('../services/proposalService');
 const db = require('../db/pool');
-const context = require('../services/meko/contextService');
+const person = require('../services/meko/personMemory');
 const agent = require('../services/investmentAgent');
 const assistant = require('../services/assistant');
 
@@ -81,12 +82,13 @@ router.get('/:fid/agent/evaluations', wrap(async (req, res) => res.json({ succes
 router.get('/:fid/agent/evaluations/:eid', wrap(async (req, res) => res.json({ success: true, evaluation: await agent.get(req.params.fid, uid(req), req.params.eid) })));
 
 // ---- Contextual memory (Meko) ------------------------------------------------------
-router.get('/:fid/context', wrap(async (req, res) => res.json({ success: true, memories: await context.list(req.params.fid, uid(req), { kind: req.query.kind }) })));
-router.get('/:fid/context/search', wrap(async (req, res) => res.json({ success: true, ...(await context.search(req.params.fid, uid(req), req.query.q, { limit: Math.min(20, Number(req.query.limit) || 8) })) })));
-router.post('/:fid/context', wrap(async (req, res) => res.status(201).json({ success: true, ...(await context.add(req.params.fid, uid(req), req.body, ip(req))) })));
-router.post('/:fid/context/resync', wrap(async (req, res) => res.json({ success: true, results: await context.resync(req.params.fid, uid(req)) })));
-router.patch('/:fid/context/:mid', wrap(async (req, res) => res.json({ success: true, ...(await context.correct(req.params.fid, uid(req), req.params.mid, req.body, ip(req))) })));
-router.delete('/:fid/context/:mid', wrap(async (req, res) => { await context.remove(req.params.fid, uid(req), req.params.mid, ip(req)); res.json({ success: true }); }));
+// Family planning: members choose to share their Meko memory and documents with this family's chat.
+router.get('/:fid/memory-sharing', wrap(async (req, res) => { await families.requireRole(req.params.fid, uid(req), 'viewer'); res.json({ success: true, ...(await person.sharingStatus(req.params.fid, uid(req))) }); }));
+router.put('/:fid/memory-sharing', wrap(async (req, res) => {
+  await families.requireRole(req.params.fid, uid(req), 'viewer');
+  const { share } = validate(z.object({ share: z.boolean() }).strict(), req.body);
+  res.json({ success: true, ...(await person.setSharing(req.params.fid, uid(req), share, ip(req))) });
+}));
 
 // ---- Audit log (admins) ------------------------------------------------------------
 router.get('/:fid/audit', wrap(async (req, res) => {

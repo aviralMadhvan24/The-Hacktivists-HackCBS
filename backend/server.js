@@ -81,6 +81,7 @@ app.get('/api/health', async (req, res) => {
 // ---- Routes -------------------------------------------------------------------
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/zerodha', require('./routes/zerodha')); // applies auth per route (OAuth callback is public)
+app.use('/api/me', requireAuth, require('./routes/memory')); // memory + documents
 app.use('/api/me', requireAuth, require('./routes/me'));
 app.use('/api/families', requireAuth, require('./routes/families'));
 app.use('/api/voice', requireAuth, require('./routes/voice'));

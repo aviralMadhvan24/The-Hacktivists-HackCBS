@@ -78,6 +78,7 @@ router.post('/analyze', handleUpload, wrap(async (req, res) => {
   }
   const row = await saveAnalysis(req.user.id, { analysis, sourceUrl });
   await audit({ actorId: req.user.id, action: 'concall.analyze', entityType: 'concall', entityId: row.id, details: { ticker: row.ticker }, ip: req.ip });
+  await require('../services/activity').concall(req.user.id, { company: row.company, ticker: row.ticker, quarter: row.quarter, fiscalYear: row.fiscal_year });
   res.json({ success: true, analysis: row.analysis });
 }));
 
@@ -98,6 +99,20 @@ async function markImported(userId, transcripts) {
   const done = new Map(rows.map((r) => [r.source_url, r.id]));
   return transcripts.map((t) => ({ ...t, importedAnalysisId: done.get(t.url) || null }));
 }
+
+// Automatic: ticker -> company website -> investor pages -> newest transcript.
+// The found source is saved so it can be re-checked for new quarters later.
+router.post('/auto', wrap(async (req, res) => {
+  const { ticker } = validate(z.object({ ticker: z.string().trim().min(1).max(30) }).strict(), req.body);
+  let r;
+  try { r = await require('../services/concallAuto').findLatest(ticker); } catch (err) { throw err.code === 'LOOKUP_FAILED' ? badRequest(err.message) : fetchError(err); }
+  if (r.found && r.irUrl) {
+    await db.query(
+      `INSERT INTO research_sources (id, user_id, ticker, company, ir_url) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (user_id, ticker, ir_url) DO UPDATE SET company = EXCLUDED.company`, [randomUUID(), req.user.id, r.ticker, r.company, r.irUrl]);
+  }
+  res.json({ success: true, ...r, transcripts: r.transcripts ? await markImported(req.user.id, r.transcripts) : [] });
+}));
 
 router.post('/discover', wrap(async (req, res) => {
   const { irUrl } = validate(z.object({ irUrl: z.string().url().max(500) }).strict(), req.body);
@@ -148,6 +163,7 @@ router.post('/import', wrap(async (req, res) => {
   analysis.comparedWith = prior.rows[0] ? `${prior.rows[0].quarter} ${prior.rows[0].fiscal_year}` : null;
   const row = await saveAnalysis(req.user.id, { analysis, sourceUrl: file.url });
   await audit({ actorId: req.user.id, action: 'concall.import', entityType: 'concall', entityId: row.id, details: { ticker: row.ticker, source: new URL(file.url).hostname }, ip: req.ip });
+  await require('../services/activity').concall(req.user.id, { company: row.company, ticker: row.ticker, quarter: row.quarter, fiscalYear: row.fiscal_year });
   res.json({ success: true, analysis: row.analysis, meta: summary(row) });
 }));
 

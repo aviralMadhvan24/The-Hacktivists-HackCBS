@@ -136,6 +136,7 @@ async function runStress(familyId, viewerId, body, ip) {
   try { result = stress.runScenario(position, input.shocks, input.assumptions || {}); } catch (e) { throw engineError(e); }
   let savedId = null;
   if (input.saveAs) savedId = await saveSimulation(familyId, viewerId, scope, 'scenario', input.saveAs, input, result, ip);
+  await require('./activity').stressTest(viewerId, { shocks: input.shocks, result, saveAs: input.saveAs, scope: scope.type });
   return { ...result, savedId };
 }
 
