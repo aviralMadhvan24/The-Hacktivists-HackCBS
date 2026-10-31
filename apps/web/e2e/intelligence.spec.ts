@@ -105,6 +105,9 @@ test('Ask FinSight: consent gate, starters, and a clear message when AI is unava
   await page.getByRole('button', { name: /Kya hum ₹9 lakh ki car/ }).click();
   await expect(page.getByText('Kya hum ₹9 lakh ki car abhi le sakte hain?')).toBeVisible();
   // AI keys are blanked in e2e, so the server answers 503 and the page explains it.
-  await expect(page.getByText(/No AI provider is configured|busy/)).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/ask-desktop.png`, fullPage: true });
+  await expect(page.locator('.bubble.error')).toContainText(/No AI provider is configured|busy/);
+  await expect(page.locator('.stage canvas')).toBeVisible(); // 3D orb rendered (WebGL)
+  await expect(page.getByRole('button', { name: 'Speak to FinSight' })).toBeVisible();
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${SHOTS}/ask-desktop.png` });
 });

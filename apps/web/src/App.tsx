@@ -72,6 +72,7 @@ function Shell({ children }: { children: ReactNode }) {
           <div className="nav-section" style={{ padding: '0 0 6px 4px' }}>Family</div>
           <FamilySwitcher />
         </div>
+        <Link to="/ask" className="ask-cta"><span className="icon-disc" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}><MessageCircle size={18} /></span><span>Ask FinSight<small>Talk to your money guide</small></span></Link>
         <nav className="nav" aria-label="Main">
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end}><Icon size={18} aria-hidden /> {label}</NavLink>
@@ -111,7 +112,7 @@ function Shell({ children }: { children: ReactNode }) {
 export default function App() {
   const { user, loadingUser, families } = useSession();
   const loc = useLocation();
-  if (loadingUser) return <Loading label="Starting FinSight…" />;
+  if (loadingUser) return <Loading label="Starting FinSight…" skeleton={false} />;
   if (!user) {
     return (
       <Routes>

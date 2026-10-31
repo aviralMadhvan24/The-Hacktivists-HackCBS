@@ -78,7 +78,16 @@ function LabelledField({ label, hint, error, children }: { label: string; hint?:
   );
 }
 
-export function Loading({ label = 'Loading…' }: { label?: string }) {
+export function Loading({ label = 'Loading…', skeleton = true }: { label?: string; skeleton?: boolean }) {
+  if (skeleton) {
+    return (
+      <div className="skeleton" role="status" aria-label={label}>
+        <div className="sk" style={{ height: 180 }} />
+        <div className="grid grid-4">{[0, 1, 2, 3].map((i) => <div key={i} className="sk" style={{ height: 110 }} />)}</div>
+        <div className="sk" style={{ height: 220 }} />
+      </div>
+    );
+  }
   return <div className="state state-loading" role="status"><Loader2 className="spin" size={20} aria-hidden /> {label}</div>;
 }
 
