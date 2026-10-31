@@ -24,12 +24,12 @@ _2026-10-31. "Done" = implemented and exercised by automated tests and/or a live
 | Consent, data export, account deletion | `family.test.js`, `meko.test.js` |
 | Responsive web app (desktop + phone width), loading/empty/error states | 11 Playwright tests incl. mobile overflow |
 | Persistence across restarts | Manual restart check (session and family survived) |
+| **YugabyteDB Aeon** | Migrations 001–005 applied on YugabyteDB 2026.1.2 (Aeon, ap-south-1); all 76 backend tests pass against a separate `liquidityos_test` database on the cluster (2026-10-31) |
 
 ## Partially done
 
 | Feature | What's missing |
 |---|---|
-| **YugabyteDB** | Schema and code are YSQL-compatible, and tests run on real PostgreSQL 15. **Not yet run against YugabyteDB** — waiting for your Aeon connection string (or Docker running locally). |
 | **Meko** | Fully implemented and tested against a protocol-accurate test double. **Not yet verified against live Meko from the backend** — needs a backend API key. |
 | **Zerodha** | OAuth, encrypted tokens, holdings/funds sync and expiry handling implemented. **Not live-tested** — needs a paid Kite Connect app. |
 | **AI narratives** (agent, concall analysis, recovery) | Implemented for Gemini/OpenAI/Anthropic with JSON validation and quote checks. **Not run live** — no `GEMINI_API_KEY` configured. |

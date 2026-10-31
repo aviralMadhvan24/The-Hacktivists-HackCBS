@@ -57,6 +57,8 @@ E2E_FORECAST_URL=http://127.0.0.1:8000 npx playwright test # include the forecas
 
 Transactions retry automatically on YugabyteDB serialization conflicts (SQLSTATE 40001). Primary keys are random UUIDs, which distribute evenly across tablets.
 
+Networks that rotate their public IP (common on college and office networks) need every outgoing IP in the allow list, or connections will time out intermittently.
+
 Backups: enable scheduled backups and point-in-time recovery in Aeon; test a restore into a new cluster before launch.
 
 ## Docker
