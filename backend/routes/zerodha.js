@@ -8,6 +8,9 @@ const webUrl = (query) => `${(process.env.WEB_APP_URL || '').replace(/\/$/, '')}
 
 router.get('/status', requireAuth, wrap(async (req, res) => res.json({ success: true, ...(await zerodha.status(req.user.id)) })));
 
+// Demo: simulated connection (no Kite credentials needed), labelled as simulated everywhere.
+router.post('/simulate/connect', requireAuth, wrap(async (req, res) => res.json({ success: true, ...(await zerodha.connectSimulated(req.user.id, {}, req.ip)) })));
+
 router.get('/login-url', requireAuth, wrap(async (req, res) => res.json({ success: true, loginUrl: await zerodha.createLoginUrl(req.user.id) })));
 
 // Public: Kite redirects the browser here. The one-time state identifies the user.

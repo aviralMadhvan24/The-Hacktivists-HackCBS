@@ -149,7 +149,7 @@ function HoldingsPanel({ account }: { account: Account }) {
             <tbody>
               {(q.data || []).map((h) => (
                 <tr key={h.id}>
-                  <td><strong>{h.symbol}</strong> <span className="small muted">{h.exchange}</span>{h.source === 'zerodha' && <Badge tone="info">Zerodha</Badge>}</td>
+                  <td><strong>{h.symbol}</strong> <span className="small muted">{h.exchange}</span>{h.source === 'zerodha' && <Badge tone="info">Zerodha</Badge>}{h.source === 'zerodha' && (account.name || '').endsWith('simulated)') && <Badge tone="warn">Simulated</Badge>}</td>
                   <td>{h.sector || <span className="muted">Unclassified</span>}</td>
                   <td className="r num">{h.quantity}</td>
                   <td className="r num">{inr(h.avgPrice, { decimals: 2 })}</td>

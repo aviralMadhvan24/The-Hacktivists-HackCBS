@@ -88,6 +88,7 @@ Cash flow: `direction (income|expense), category, name, amount, frequency (month
 | Method | Path |
 |---|---|
 | GET | `/zerodha/status` · `/zerodha/login-url` · `/zerodha/portfolio` |
+| POST | `/zerodha/simulate/connect` — demo only: a **simulated** connection with sample holdings (no Kite call); disabled by `ZERODHA_SIMULATION=false` |
 | GET | `/zerodha/callback` (public; Kite redirect) |
 | POST | `/zerodha/sync` `{familyId, visibility?}` · `/zerodha/disconnect` |
 

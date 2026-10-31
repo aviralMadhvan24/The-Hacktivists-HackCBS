@@ -37,3 +37,7 @@ The adapter interface (`backend/services/marketData/MarketDataAdapter.js`) lets 
 4. In the app: Settings → Connect Zerodha → Sync holdings (choose family and visibility, private by default).
 
 Flow details: one-time `state` bound to the user via Kite's `redirect_params`; checksum `SHA256(api_key + request_token + api_secret)`; holdings (+T1 quantity) and equity margins; holdings no longer at Zerodha are removed from the synced account. FinSight never places orders.
+
+## Simulated Zerodha (demo)
+
+Without Kite Connect credentials, users can choose **Try demo connection (simulated)** in Settings. It creates a connection marked `simulated` (migration 006) with sample holdings; nothing is fetched from Zerodha. Holdings are priced at live market prices where available, otherwise at their average price. The account is named `Zerodha demat (DEMOxxxx, simulated)`, holdings carry a *Simulated* badge and a `simulated…` price source, and disconnecting removes the account. The demo seed connects Rajesh Sharma and Rohan Mehta this way. Simulated sessions last 30 days (real Kite sessions expire daily at 6:00 AM IST).

@@ -15,6 +15,7 @@ const records = require('../services/recordsService');
 const proposals = require('../services/proposalService');
 const context = require('../services/meko/contextService');
 const market = require('../services/marketData');
+const zerodha = require('../services/zerodhaService');
 const { randomUUID } = require('crypto');
 
 const DOMAIN = 'demo.finsight.test';
@@ -86,6 +87,14 @@ async function addHoldings(fid, actor, accountId, list) {
   return live;
 }
 
+/** Connects a SIMULATED Zerodha account for the user and syncs it into the family. */
+async function simulatedZerodha(user, fid, holdings, availableCash) {
+  await zerodha.connectSimulated(user.id, { portfolio: { holdings, availableCash } }, IP);
+  const r = await zerodha.syncToFamily(user.id, { familyId: fid, visibility: 'family' }, IP);
+  const { rows } = await db.query("SELECT count(*)::int AS n FROM holdings WHERE account_id = $1 AND price_source LIKE '%market-price'", [r.accountId]);
+  return rows[0].n; // holdings priced at live market prices
+}
+
 async function seedSharma() {
   const { rajesh, priya, arjun, kamla } = USERS;
   const fam = await families.createFamily(rajesh.id, 'Demo Sharma Family', IP);
@@ -104,15 +113,15 @@ async function seedSharma() {
   await add('accounts', fid, rajesh, { name: 'Rajesh EPF + PPF', kind: 'retirement', value: 1150000, equityPct: 10, owners: own([rajesh, 100]) });
   await add('accounts', fid, priya, { name: 'Gold jewellery', kind: 'gold', value: 450000, owners: own([priya, 70], [kamla, 30]) });
   await add('accounts', fid, rajesh, { name: 'Pune flat (50% with brother)', kind: 'real_estate', value: 9000000, owners: own([rajesh, 50]) });
-  const demat = await add('accounts', fid, rajesh, { name: 'Rajesh Zerodha demat (manual)', kind: 'brokerage', institution: 'Zerodha', owners: own([rajesh, 100]) });
-  const live = await addHoldings(fid, rajesh, demat.id, [
+  // Rajesh's demat comes through a SIMULATED Zerodha connection (labelled as such in the app).
+  const live = await simulatedZerodha(rajesh, fid, [
     { symbol: 'RELIANCE', sector: 'Energy', quantity: 150, avgPrice: 1180 },
     { symbol: 'TCS', sector: 'Technology', quantity: 60, avgPrice: 3350 },
     { symbol: 'INFY', sector: 'Technology', quantity: 120, avgPrice: 1520 },
     { symbol: 'HDFCBANK', sector: 'Financial Services', quantity: 200, avgPrice: 760 },
     { symbol: 'ITC', sector: 'Consumer Staples', quantity: 300, avgPrice: 410 },
     { symbol: 'NIFTYBEES', sector: 'Diversified (index ETF)', instrument: 'etf', quantity: 400, avgPrice: 255 },
-  ]);
+  ], 42000);
 
   // Loans
   await add('liabilities', fid, rajesh, { name: 'SBI home loan', kind: 'home_loan', outstanding: 2800000, emiMonthly: 32500, interestRatePct: 8.6, rateType: 'floating', remainingMonths: 138, lender: 'SBI', owners: own([rajesh, 50], [priya, 50]) });
@@ -178,6 +187,11 @@ async function seedMehta() {
     { symbol: 'TMPV', sector: 'Automotive', quantity: 600, avgPrice: 310 },
     { symbol: 'ADANIENT', sector: 'Conglomerate', quantity: 40, avgPrice: 2600 },
   ]);
+  // Rohan's small Zerodha account, also SIMULATED.
+  const liveZ = await simulatedZerodha(rohan, fid, [
+    { symbol: 'NIFTYBEES', sector: 'Diversified (index ETF)', instrument: 'etf', quantity: 60, avgPrice: 268 },
+    { symbol: 'IRFC', sector: 'Financial Services', quantity: 150, avgPrice: 165 },
+  ], 3500);
   await add('liabilities', fid, rohan, { name: 'Personal loan (wedding)', kind: 'personal_loan', outstanding: 520000, emiMonthly: 18500, interestRatePct: 14.5, remainingMonths: 32, owners: own([rohan, 100]) });
   await add('liabilities', fid, neha, { name: 'Credit card balance', kind: 'credit_card', outstanding: 64000, interestRatePct: 40, owners: own([neha, 100]) });
   await add('cashflows', fid, rohan, { direction: 'income', category: 'salary', name: 'Rohan salary (startup)', amount: 72000, owners: own([rohan, 100]) });
@@ -186,7 +200,7 @@ async function seedMehta() {
   await add('cashflows', fid, rohan, { direction: 'expense', category: 'household', name: 'Groceries, utilities, transport', amount: 31000, owners: own([rohan, 50], [neha, 50]) });
   await add('cashflows', fid, rohan, { direction: 'expense', category: 'lifestyle', name: 'Dining, shopping, subscriptions', amount: 21000, essential: false, owners: own([rohan, 50], [neha, 50]) });
   for (const u of [rohan, neha]) { await consent(u.id, 'ai_analysis'); await consent(u.id, 'meko_context'); }
-  return { fid, live };
+  return { fid, live, liveZ };
 }
 
 async function main() {
@@ -202,9 +216,9 @@ async function main() {
     console.log('Demo users already exist. Run with --reset to recreate them and their families.');
   } else {
     const s = await seedSharma();
-    console.log(`Demo Sharma Family: 4 members, ${s.live}/6 holdings priced live, ${s.ctx} memories (${s.synced} synced to Meko).`);
+    console.log(`Demo Sharma Family: 4 members, ${s.live}/6 simulated-Zerodha holdings priced live, ${s.ctx} memories (${s.synced} synced to Meko).`);
     const m = await seedMehta();
-    console.log(`Demo Mehta Family: 2 members, ${m.live}/2 holdings priced live.`);
+    console.log(`Demo Mehta Family: 2 members, ${m.live}/2 Groww + ${m.liveZ}/2 simulated-Zerodha holdings priced live.`);
   }
   console.log(`\nSign in at the web app with any of these (password: ${PASSWORD}):`);
   console.table(Object.values(USERS).map((u) => ({ name: u.name, email: u.email })));

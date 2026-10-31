@@ -21,6 +21,86 @@ const { encrypt, decrypt, randomToken } = require('../lib/security');
 const { audit } = require('../lib/audit');
 const { HttpError, badRequest, notFound } = require('../lib/http');
 const familyService = require('./familyService');
+const market = require('./marketData');
+
+// ---- Demo simulation -------------------------------------------------------
+// Lets people try the Zerodha flow without Kite Connect credentials. Everything
+// it creates is labelled "simulated": the connection, the account name and the
+// price source. It never calls Kite. Disable with ZERODHA_SIMULATION=false.
+const simulationEnabled = () => process.env.ZERODHA_SIMULATION !== 'false';
+const SIM_DAYS = 30; // demo sessions outlast Kite's daily expiry so demos don't break overnight
+
+// A basket of large NSE names; a simulated account gets a deterministic subset.
+const SIM_BASKET = [
+  { symbol: 'RELIANCE', sector: 'Energy', avgPrice: 1250 },
+  { symbol: 'TCS', sector: 'Technology', avgPrice: 3400 },
+  { symbol: 'INFY', sector: 'Technology', avgPrice: 1500 },
+  { symbol: 'HDFCBANK', sector: 'Financial Services', avgPrice: 820 },
+  { symbol: 'ICICIBANK', sector: 'Financial Services', avgPrice: 1200 },
+  { symbol: 'ITC', sector: 'Consumer Staples', avgPrice: 420 },
+  { symbol: 'LT', sector: 'Industrials', avgPrice: 3400 },
+  { symbol: 'BHARTIARTL', sector: 'Telecom', avgPrice: 1600 },
+  { symbol: 'HINDUNILVR', sector: 'Consumer Staples', avgPrice: 2400 },
+  { symbol: 'SUNPHARMA', sector: 'Healthcare', avgPrice: 1600 },
+  { symbol: 'NIFTYBEES', sector: 'Diversified (index ETF)', instrument: 'etf', avgPrice: 260 },
+];
+
+function defaultSimPortfolio(userId) {
+  const h = crypto.createHash('sha256').update(String(userId)).digest();
+  const picks = SIM_BASKET.filter((_, i) => h[i] % 2 === 0).slice(0, 5);
+  const list = picks.length >= 3 ? picks : SIM_BASKET.slice(0, 4);
+  return {
+    holdings: list.map((b, i) => ({ ...b, instrument: b.instrument || 'equity', quantity: Math.max(5, Math.round((80000 + h[i + 12] * 400) / b.avgPrice)) })),
+    availableCash: 15000 + h[30] * 100,
+  };
+}
+
+function cleanSimPortfolio(p) {
+  if (!p || !Array.isArray(p.holdings) || !p.holdings.length || p.holdings.length > 50) throw badRequest('Simulated portfolio needs 1-50 holdings.');
+  return {
+    holdings: p.holdings.map((x) => {
+      const symbol = String(x.symbol || '').toUpperCase().trim();
+      if (!/^[A-Z0-9&-]{1,20}$/.test(symbol) || !(Number(x.quantity) > 0) || !(Number(x.avgPrice) >= 0)) throw badRequest(`Invalid simulated holding ${symbol}.`);
+      return { symbol, sector: x.sector ? String(x.sector).slice(0, 60) : null, instrument: x.instrument === 'etf' ? 'etf' : 'equity', quantity: Number(x.quantity), avgPrice: Number(x.avgPrice) };
+    }),
+    availableCash: Number(p.availableCash) || 0,
+  };
+}
+
+/** Creates a simulated Zerodha connection (no Kite involved). */
+async function connectSimulated(userId, { portfolio } = {}, ip) {
+  if (!simulationEnabled()) throw new HttpError(403, 'ZERODHA_SIMULATION_DISABLED', 'Zerodha demo simulation is disabled on this server.');
+  const p = portfolio ? cleanSimPortfolio(portfolio) : defaultSimPortfolio(userId);
+  const u = (await db.query('SELECT name FROM users WHERE id = $1', [userId])).rows[0];
+  const brokerUserId = `DEMO${crypto.createHash('sha256').update(String(userId)).digest('hex').slice(0, 4).toUpperCase()}`;
+  await db.withTransaction(async (c) => {
+    await c.query("UPDATE broker_connections SET revoked_at = now() WHERE user_id = $1 AND broker = 'zerodha' AND revoked_at IS NULL", [userId]);
+    await c.query(
+      `INSERT INTO broker_connections (id, user_id, broker, broker_user_id, broker_user_name, access_token_enc, expires_at, simulated, simulated_portfolio)
+       VALUES ($1,$2,'zerodha',$3,$4,$5,$6,true,$7)`,
+      [randomUUID(), userId, brokerUserId, u?.name || 'Demo investor', encrypt(`simulated:${randomToken(16)}`), new Date(Date.now() + SIM_DAYS * 86400000), JSON.stringify(p)]);
+    await audit({ actorId: userId, action: 'broker.connect', entityType: 'broker', entityId: 'zerodha', details: { brokerUserId, simulated: true }, ip }, c);
+  });
+  return status(userId);
+}
+
+/** Simulated equivalent of Kite's holdings + margins, priced live where possible. */
+async function simulatedPortfolio(connection) {
+  const p = connection.simulated_portfolio || { holdings: [], availableCash: 0 };
+  const holdings = [];
+  for (const h of p.holdings) {
+    let lastPrice = null; let priceSource = 'simulated';
+    try {
+      const q = await market.getQuote(h.symbol);
+      if (q.currentPrice > 0 && q.freshness !== 'DEMO_DATA') { lastPrice = q.currentPrice; priceSource = 'market'; }
+    } catch (_) { /* offline: value at average price */ }
+    if (lastPrice == null) lastPrice = h.avgPrice;
+    holdings.push({ symbol: h.symbol, exchange: 'NSE', isin: null, sector: h.sector || null, instrument: h.instrument || 'equity',
+      quantity: h.quantity, avgPrice: h.avgPrice, lastPrice, priceSource,
+      pnl: Math.round((lastPrice - h.avgPrice) * h.quantity * 100) / 100, dayChangePct: null });
+  }
+  return { holdings, funds: { net: p.availableCash, availableCash: p.availableCash, liveBalance: p.availableCash } };
+}
 
 const KITE_API = process.env.ZERODHA_API_BASE || 'https://api.kite.trade';
 const KITE_LOGIN = 'https://kite.zerodha.com/connect/login';
@@ -115,12 +195,17 @@ async function status(userId) {
   const connected = Boolean(c && new Date(c.expires_at) > new Date());
   return {
     isConfigured: isConfigured(),
+    simulationAvailable: simulationEnabled(),
     isConnected: connected,
+    simulated: Boolean(c?.simulated),
     connection: c ? {
+      simulated: Boolean(c.simulated),
       brokerUserId: c.broker_user_id, brokerUserName: c.broker_user_name, connectedAt: c.connected_at,
       expiresAt: c.expires_at, lastSyncedAt: c.last_synced_at, expired: !connected,
     } : null,
-    note: 'Zerodha access tokens expire daily at 6:00 AM IST; reconnect to sync again.',
+    note: c?.simulated
+      ? 'Simulated demo connection: no real Zerodha account is linked and the holdings are sample data, priced at live market prices where available.'
+      : 'Zerodha access tokens expire daily at 6:00 AM IST; reconnect to sync again.',
   };
 }
 
@@ -133,7 +218,8 @@ async function accessToken(userId) {
 
 /** Fetches live holdings and equity funds from Kite (no persistence). */
 async function fetchPortfolio(userId) {
-  const { token } = await accessToken(userId);
+  const { token, connection } = await accessToken(userId);
+  if (connection.simulated) return { ...(await simulatedPortfolio(connection)), simulated: true, fetchedAt: new Date().toISOString() };
   const holdings = await kiteFetch('/portfolio/holdings', { accessToken: token });
   let funds = null;
   try {
@@ -163,7 +249,7 @@ async function syncToFamily(userId, { familyId, visibility = 'private' }, ip) {
   if (!['private', 'family'].includes(visibility)) throw badRequest('visibility must be private or family.');
   const portfolio = await fetchPortfolio(userId);
   const { connection } = await accessToken(userId);
-  const accountName = `Zerodha demat (${connection.broker_user_id})`;
+  const accountName = connection.simulated ? `Zerodha demat (${connection.broker_user_id}, simulated)` : `Zerodha demat (${connection.broker_user_id})`;
 
   const result = await db.withTransaction(async (c) => {
     const existing = await c.query(
@@ -184,27 +270,44 @@ async function syncToFamily(userId, { familyId, visibility = 'private' }, ip) {
       if (h.quantity <= 0) continue;
       symbols.push(`${h.exchange}:${h.symbol}`);
       await c.query(
-        `INSERT INTO holdings (id, account_id, symbol, exchange, isin, quantity, avg_price, last_price, price_as_of, price_source, source)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now(),'zerodha','zerodha')
+        `INSERT INTO holdings (id, account_id, symbol, exchange, isin, quantity, avg_price, last_price, price_as_of, price_source, source, sector, instrument)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now(),$9,'zerodha',$10,$11)
          ON CONFLICT (account_id, exchange, symbol) DO UPDATE SET quantity = EXCLUDED.quantity, avg_price = EXCLUDED.avg_price,
            isin = COALESCE(EXCLUDED.isin, holdings.isin), last_price = EXCLUDED.last_price, price_as_of = now(),
-           price_source = 'zerodha', source = 'zerodha', updated_at = now()`,
-        [randomUUID(), accountId, h.symbol, h.exchange, h.isin, h.quantity, h.avgPrice, h.lastPrice]);
+           price_source = EXCLUDED.price_source, source = 'zerodha', sector = COALESCE(holdings.sector, EXCLUDED.sector),
+           instrument = EXCLUDED.instrument, updated_at = now()`,
+        [randomUUID(), accountId, h.symbol, h.exchange, h.isin, h.quantity, h.avgPrice, h.lastPrice,
+          connection.simulated ? (h.priceSource === 'market' ? 'simulated-holding/market-price' : 'simulated') : 'zerodha',
+          h.sector || null, h.instrument || 'equity']);
     }
     const removed = await c.query(
       `DELETE FROM holdings WHERE account_id = $1 AND source = 'zerodha' AND NOT ((exchange || ':' || symbol) = ANY($2::text[]))`,
       [accountId, symbols]);
     await c.query('UPDATE broker_connections SET last_synced_at = now() WHERE id = $1', [connection.id]);
-    await audit({ familyId, actorId: userId, action: 'broker.sync', entityType: 'account', entityId: accountId, details: { holdings: symbols.length, removed: removed.rowCount }, ip }, c);
+    await audit({ familyId, actorId: userId, action: 'broker.sync', entityType: 'account', entityId: accountId, details: { holdings: symbols.length, removed: removed.rowCount, simulated: Boolean(connection.simulated) }, ip }, c);
     return { accountId, holdingsSynced: symbols.length, holdingsRemoved: removed.rowCount };
   });
-  return { ...result, funds: portfolio.funds, fetchedAt: portfolio.fetchedAt,
-    note: 'Sectors are not provided by Zerodha. Set them on each holding for accurate diversification analysis.' };
+  return { ...result, funds: portfolio.funds, fetchedAt: portfolio.fetchedAt, simulated: Boolean(connection.simulated),
+    note: connection.simulated
+      ? 'Simulated demo data: sample holdings, priced at live market prices where available. Disconnecting removes this simulated account.'
+      : 'Sectors are not provided by Zerodha. Set them on each holding for accurate diversification analysis.' };
 }
 
 async function disconnect(userId, ip) {
   const c = await activeConnection(userId);
   if (!c) throw notFound('No Zerodha connection.');
+  if (c.simulated) {
+    // Simulated data must not linger in a real family: remove the simulated accounts too.
+    await db.withTransaction(async (t) => {
+      await t.query(
+        `UPDATE accounts SET deleted_at = now() WHERE deleted_at IS NULL AND id IN (
+           SELECT a.id FROM accounts a JOIN account_owners o ON o.account_id = a.id
+           WHERE o.user_id = $1 AND a.institution = 'Zerodha' AND a.value_source = 'broker' AND a.name LIKE '%, simulated)')`, [userId]);
+      await t.query('UPDATE broker_connections SET revoked_at = now(), access_token_enc = $2 WHERE id = $1', [c.id, 'revoked']);
+      await audit({ actorId: userId, action: 'broker.disconnect', entityType: 'broker', entityId: 'zerodha', details: { simulated: true }, ip }, t);
+    });
+    return;
+  }
   // Best-effort server-side logout; the token is revoked locally regardless.
   try {
     if (new Date(c.expires_at) > new Date()) {
@@ -216,4 +319,4 @@ async function disconnect(userId, ip) {
   await audit({ actorId: userId, action: 'broker.disconnect', entityType: 'broker', entityId: 'zerodha', ip });
 }
 
-module.exports = { isConfigured, createLoginUrl, handleCallback, status, fetchPortfolio, syncToFamily, disconnect, nextKiteExpiry, checksum };
+module.exports = { isConfigured, simulationEnabled, connectSimulated, defaultSimPortfolio, createLoginUrl, handleCallback, status, fetchPortfolio, syncToFamily, disconnect, nextKiteExpiry, checksum };

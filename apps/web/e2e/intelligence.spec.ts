@@ -111,3 +111,15 @@ test('Ask FinSight: consent gate, starters, and a clear message when AI is unava
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${SHOTS}/ask-desktop.png` });
 });
+
+test('simulated Zerodha demo connection', async ({ page }) => {
+  test.setTimeout(120_000);
+  await setup(page);
+  await page.getByRole('link', { name: 'Settings' }).first().click();
+  await page.getByRole('button', { name: 'Try demo connection (simulated)' }).click();
+  await expect(page.getByText(/Simulated Zerodha connected: synced \d+ holding/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('Simulated demo connection — sample data, not a real Zerodha account.')).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/zerodha-sim.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(page.getByRole('button', { name: 'Try demo connection (simulated)' })).toBeVisible();
+});

@@ -89,17 +89,55 @@ function Zerodha() {
     mutationFn: () => api.post<any>('/zerodha/sync', { familyId: target.familyId || familyId, visibility: target.visibility }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['zerodha'] }); qc.invalidateQueries({ queryKey: ['records'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }); },
   });
-  const disconnect = useMutation({ mutationFn: () => api.post('/zerodha/disconnect'), onSuccess: () => qc.invalidateQueries({ queryKey: ['zerodha'] }) });
+  const invalidateAll = () => ['zerodha', 'records', 'dashboard'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const disconnect = useMutation({ mutationFn: () => api.post('/zerodha/disconnect'), onSuccess: invalidateAll });
+  // Simulated Kite login: walks through the same steps as the real OAuth flow, then syncs.
+  const [simStep, setSimStep] = useState(-1);
+  const simulate = useMutation({
+    mutationFn: async () => {
+      const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      setSimStep(0); await wait(900);
+      setSimStep(1); await wait(900);
+      setSimStep(2);
+      await api.post('/zerodha/simulate/connect');
+      setSimStep(3);
+      const r = await api.post<any>('/zerodha/sync', { familyId: target.familyId || familyId, visibility: 'family' });
+      setSimStep(4);
+      return r;
+    },
+    onSuccess: invalidateAll,
+    onSettled: () => setTimeout(() => setSimStep(-1), 1200),
+  });
+  const SIM_STEPS = ['Opening Kite login (simulated)…', 'Authorising FinSight for read-only access…', 'Exchanging request token for a session…', 'Fetching holdings and funds…', 'Connected and synced'];
   const s = status.data;
+  const canUse = s && (s.isConfigured || s.simulated);
   return (
     <Card title="Zerodha (Kite Connect)" subtitle="Read-only sync of holdings. FinSight never places trades.">
       {status.isLoading && <Loading />}
-      {s && !s.isConfigured && <Notice tone="warn">Zerodha isn't configured on this server. An administrator must add Kite Connect API credentials.</Notice>}
-      {s && s.isConfigured && (
+      {s && !s.isConfigured && !s.simulated && <Notice tone="warn">Real Zerodha login isn't configured on this server (Kite Connect API credentials needed).{s.simulationAvailable ? ' You can try the flow with a simulated demo account instead.' : ''}</Notice>}
+      {s && !s.isConnected && s.simulationAvailable && (
+        <div className="stack-sm">
+          <div className="row">
+            <Button variant={s.isConfigured ? 'secondary' : 'primary'} onClick={() => simulate.mutate()} loading={simulate.isPending}>Try demo connection (simulated)</Button>
+          </div>
+          <p className="small muted">Creates a clearly labelled <strong>simulated</strong> Zerodha account with sample holdings (priced at live market prices where available) and syncs it into {families.find((f) => f.id === (target.familyId || familyId))?.name || 'your family'}. No real broker account is linked. Disconnect removes it.</p>
+        </div>
+      )}
+      {simStep >= 0 && (
+        <ol className="sim-steps" aria-live="polite">
+          {SIM_STEPS.map((t, i) => (
+            <li key={t} className={i < simStep || simStep === 4 ? 'done' : i === simStep ? 'active' : ''}>{t}</li>
+          ))}
+        </ol>
+      )}
+      {simulate.data && simStep < 0 && <Notice tone="good">Simulated Zerodha connected: synced {simulate.data.holdingsSynced} holding(s). {simulate.data.note}</Notice>}
+      {simulate.error && <Notice tone="bad">{errorMessage(simulate.error)}</Notice>}
+      {canUse && (
         <div className="stack">
+          {s.simulated && <Notice tone="warn">Simulated demo connection — sample data, not a real Zerodha account.</Notice>}
           {s.connection ? (
             <dl className="kv">
-              <dt>Account</dt><dd>{s.connection.brokerUserName || s.connection.brokerUserId}</dd>
+              <dt>Account</dt><dd>{s.connection.brokerUserName || s.connection.brokerUserId} <span className="small muted">({s.connection.brokerUserId})</span> {s.simulated && <Badge tone="warn">Simulated</Badge>}</dd>
               <dt>Status</dt><dd>{s.isConnected ? <Badge tone="good">Connected</Badge> : <Badge tone="warn">Session expired</Badge>}</dd>
               <dt>Session valid until</dt><dd>{dateTime(s.connection.expiresAt)}</dd>
               <dt>Last synced</dt><dd>{dateTime(s.connection.lastSyncedAt)}</dd>
@@ -107,7 +145,7 @@ function Zerodha() {
           ) : <p className="muted">Not connected.</p>}
           <p className="small muted">{s.note}</p>
           <div className="row">
-            <Button variant={s.isConnected ? 'secondary' : 'primary'} onClick={() => connect.mutate()} loading={connect.isPending}>{s.connection ? 'Reconnect' : 'Connect Zerodha'}</Button>
+            {s.isConfigured && <Button variant={s.isConnected ? 'secondary' : 'primary'} onClick={() => connect.mutate()} loading={connect.isPending}>{s.connection && !s.simulated ? 'Reconnect' : 'Connect real Zerodha'}</Button>}
             {s.connection && !s.connection.expired && <Button variant="ghost" onClick={() => disconnect.mutate()} loading={disconnect.isPending}>Disconnect</Button>}
           </div>
           {s.isConnected && (
@@ -175,7 +213,7 @@ function Integrations() {
           {row('Database', q.data.database?.reachable, q.data.database?.engine || 'Unreachable')}
           {row('AI provider', i.llm.configured, i.llm.configured ? `${i.llm.provider} (${i.llm.model})` : 'Set GEMINI_API_KEY on the server')}
           {row('Market data', true, i.marketData.provider === 'MOCK' ? 'Demo prices only' : 'Yahoo Finance, ~15 min delayed')}
-          {row('Zerodha', i.zerodha.configured, i.zerodha.configured ? 'Kite Connect' : 'Kite Connect credentials needed')}
+          {row('Zerodha', i.zerodha.configured, i.zerodha.configured ? 'Kite Connect' : 'Kite Connect credentials needed · simulated demo available above')}
           {row('Meko memory', i.meko.configured && i.meko.enabled, i.meko.enabled ? 'Enabled' : 'Disabled')}
         </tbody></table></div>
       )}
