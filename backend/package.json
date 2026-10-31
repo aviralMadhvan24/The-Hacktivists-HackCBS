@@ -11,7 +11,8 @@
     "db:migrate": "node db/migrate.js",
     "db:import-legacy": "node scripts/import-legacy-users.js",
     "dev:db": "node scripts/dev-db.js start",
-    "dev:db:stop": "node scripts/dev-db.js stop"
+    "dev:db:stop": "node scripts/dev-db.js stop",
+    "test:remote": "node scripts/test-remote.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

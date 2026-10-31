@@ -129,3 +129,18 @@ test('context sources reject javascript: and other non-http links', async () => 
   const r = await ctx(asha, 'POST', '', { kind: 'note', title: 'XSS attempt', body: 'This should not be stored with a script link.', sources: [{ label: 'x', url: 'javascript:alert(1)' }] });
   assert.equal(r.status, 400);
 });
+
+test('a stale control conversation (e.g. Meko account switched) is replaced automatically', async () => {
+  const db = require('../db/pool');
+  await db.query("UPDATE meko_settings SET value = 'stale-conversation-id' WHERE key = 'control_conversation_id'");
+  require('../services/meko/contextService').resetControlCache();
+  const before = fake.state.conversations.size;
+  // A new family needs a new datapack, which needs the control conversation.
+  const f = await call('POST', '/api/families', { token: asha.token, body: { name: 'Second Family' } });
+  const r = await call('POST', `/api/families/${f.body.family.id}/context`, { token: asha.token, body: { kind: 'note', title: 'Fresh family note', body: 'This needs a brand new datapack in Meko.' } });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.sync.status, 'synced', JSON.stringify(r.body.sync));
+  const { rows } = await db.query("SELECT value FROM meko_settings WHERE key = 'control_conversation_id'");
+  assert.notEqual(rows[0].value, 'stale-conversation-id');
+  assert.ok(fake.state.conversations.size > before);
+});

@@ -40,7 +40,8 @@ function errorMiddleware(err, req, res, next) {
   if (err && err.code === '23505') {
     return res.status(409).json({ success: false, error: 'CONFLICT', message: 'That record already exists.' });
   }
-  if (err && (err.code === 'ECONNREFUSED' || err.code === '57P01' || err.code === 'ETIMEDOUT')) {
+  const connLost = err && /Connection terminated|timeout exceeded when trying to connect|connection timeout/i.test(err.message || '');
+  if (err && (err.code === 'ECONNREFUSED' || err.code === '57P01' || err.code === 'ETIMEDOUT' || err.code === 'ECONNRESET' || connLost)) {
     console.error('Database unavailable:', err.message);
     return res.status(503).json({ success: false, error: 'DB_UNAVAILABLE', message: 'The database is temporarily unavailable. Please retry shortly.' });
   }

@@ -24,7 +24,7 @@ _2026-10-31. "Done" = implemented and exercised by automated tests and/or a live
 | Consent, data export, account deletion | `family.test.js`, `meko.test.js` |
 | Responsive web app (desktop + phone width), loading/empty/error states | 11 Playwright tests incl. mobile overflow |
 | Persistence across restarts | Manual restart check (session and family survived) |
-| **YugabyteDB Aeon** | Migrations 001–005 applied on YugabyteDB 2026.1.2 (Aeon, ap-south-1); all 76 backend tests pass against a separate `liquidityos_test` database on the cluster (2026-10-31) |
+| **YugabyteDB Aeon** | Migrations 001–005 applied on YugabyteDB 2026.1.2 (Aeon, ap-south-1); all 77 backend tests pass against a separate `liquidityos_test` database on the cluster via `npm run test:remote` (2026-10-31) |
 
 ## Partially done
 

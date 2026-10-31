@@ -11,7 +11,13 @@ let pool = null;
 function buildConfig() {
   const url = process.env.DATABASE_URL;
   if (!url) return null;
-  const config = { connectionString: url, max: Number(process.env.DB_POOL_MAX || 10) };
+  // Keep the pool small on YugabyteDB Aeon Sandbox (max_connections is ~13 per node).
+  const config = {
+    connectionString: url,
+    max: Number(process.env.DB_POOL_MAX || 10),
+    idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 10000),
+    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+  };
   // YugabyteDB Aeon requires TLS. DB_SSL=require verifies the server cert,
   // optionally against DB_SSL_ROOT_CERT (path to the cluster's root.crt).
   const sslMode = (process.env.DB_SSL || '').toLowerCase();

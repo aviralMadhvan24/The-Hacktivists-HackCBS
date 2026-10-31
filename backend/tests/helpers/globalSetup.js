@@ -47,6 +47,10 @@ async function globalSetup() {
   if (process.env.TEST_DATABASE_URL) {
     process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
   } else {
+    // The local test server has no TLS; don't inherit Aeon SSL settings from .env
+    // (dotenv never overrides variables that are already set, even to '').
+    process.env.DB_SSL = '';
+    process.env.DB_SSL_ROOT_CERT = '';
     const EmbeddedPostgres = require('embedded-postgres').default;
     const port = await freePort();
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'liquidityos-pg-'));

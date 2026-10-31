@@ -35,8 +35,8 @@ cd apps/forecast-service && .venv/Scripts/python main.py
 ## Tests
 
 ```bash
-cd backend && npm test               # 76 tests; boots its own temporary PostgreSQL
-TEST_DATABASE_URL=postgresql://... npm test   # run against YugabyteDB instead
+cd backend && npm test               # 77 tests; boots its own temporary PostgreSQL
+npm run test:remote   # same tests on a separate liquidityos_test DB in your DATABASE_URL cluster, one file at a time
 cd apps/web && npx vite build && npx playwright test      # 11 browser tests; needs `npm run dev:db`
 E2E_FORECAST_URL=http://127.0.0.1:8000 npx playwright test # include the forecast test
 ```
