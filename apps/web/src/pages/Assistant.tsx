@@ -14,7 +14,8 @@ import { PageHeader } from '../App';
 
 const Orb = lazy(() => import('../components/Orb'));
 
-interface Msg { role: 'user' | 'assistant'; content: string; tools?: { tool: string; label: string; ok: boolean }[]; followUps?: string[]; error?: boolean; voice?: boolean; meko?: { used: boolean; stored: boolean } }
+interface Msg { role: 'user' | 'assistant'; content: string; tools?: { tool: string; label: string; ok: boolean }[]; followUps?: string[]; error?: boolean; voice?: boolean; meko?: { used: boolean; stored: boolean; recalled?: Recalled[]; documents?: { document: string; filename: string | null; owner: string; text: string }[] } }
+interface Recalled { id: string; text: string; person: string; date: string | null; own: boolean }
 
 const STARTERS = [
   'Agar meri naukri 6 mahine ke liye chali jaye to hum kitne mahine chal payenge?',
@@ -82,6 +83,43 @@ function HomeSide({ scope }: { scope: 'me' | 'family' }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+/** A4: exactly what Meko returned for this answer, with Forget for your own memories. */
+function RecallPanel({ meko }: { meko: NonNullable<Msg['meko']> }) {
+  const [forgotten, setForgotten] = useState<Record<string, 'busy' | 'done' | 'error'>>({});
+  const mems = meko.recalled || [];
+  const docs = meko.documents || [];
+  if (!mems.length && !docs.length) return <div className="recall-empty">Meko had nothing relevant to recall for this question.</div>;
+  const forget = async (id: string) => {
+    setForgotten((f) => ({ ...f, [id]: 'busy' }));
+    try { await api.del(`/me/memory/${id}`); setForgotten((f) => ({ ...f, [id]: 'done' })); } catch { setForgotten((f) => ({ ...f, [id]: 'error' })); }
+  };
+  return (
+    <details className="recall" open>
+      <summary><Brain size={13} /> Recalled from Meko · {mems.length} memor{mems.length === 1 ? 'y' : 'ies'}{docs.length ? ` · ${docs.length} document passage${docs.length === 1 ? '' : 's'}` : ''}</summary>
+      <ul>
+        {mems.map((m) => (
+          <li key={m.id} className={forgotten[m.id] === 'done' ? 'gone' : ''}>
+            <span className="who">{m.own ? 'You' : m.person}</span>
+            <span className="txt">{forgotten[m.id] === 'done' ? 'Forgotten — Meko will no longer use this.' : m.text}</span>
+            {m.own && forgotten[m.id] !== 'done' && (
+              <button className="btn btn-ghost btn-sm" onClick={() => forget(m.id)} disabled={forgotten[m.id] === 'busy'} aria-label="Forget this memory">
+                {forgotten[m.id] === 'busy' ? 'Forgetting…' : forgotten[m.id] === 'error' ? 'Retry forget' : 'Forget'}
+              </button>
+            )}
+          </li>
+        ))}
+        {docs.map((d, i) => (
+          <li key={`d${i}`}>
+            <span className="who">{d.document}{d.owner !== 'you' ? ` · ${d.owner}` : ''}</span>
+            <span className="txt">“{d.text.length > 220 ? `${d.text.slice(0, 220)}…` : d.text}”</span>
+          </li>
+        ))}
+      </ul>
+      <div className="recall-foot">Only what Meko returned is shown. See everything on the <Link to="/memory">Memory page</Link>.</div>
+    </details>
   );
 }
 
@@ -265,6 +303,7 @@ export default function Assistant() {
                     {m.role === 'assistant' && m.meko && (
                       <div className={`meko-tag ${m.meko.used ? 'on' : 'off'}`}><Brain size={11} /> {m.meko.used ? 'Meko on · this chat is remembered' : 'Meko off · numbers only, not remembered'}</div>
                     )}
+                    {m.role === 'assistant' && m.meko?.used && <RecallPanel meko={m.meko} />}
                     {m.role === 'assistant' && !m.error && voice.support.speak && (
                       <button className="btn btn-ghost btn-sm" style={{ marginTop: 6, paddingLeft: 0 }} onClick={() => { setCaption(m.content); voice.speak(m.content, lang, voiceStyle); }}><Volume2 size={14} /> Listen</button>
                     )}

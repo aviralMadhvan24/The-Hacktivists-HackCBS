@@ -221,6 +221,24 @@ async function chat(familyId, userId, body, ip, deps = { llm }) {
     const summary = summarisePosition(await ctx.position(summaryScope));
     const started = Date.now();
     const steps = [{ tool: 'get_financial_summary', args: { scope: summaryScope }, result: summary, label: 'Read your financial summary', prefetched: true }];
+    // Recall before reasoning: with Meko on, the most relevant memories (and document
+    // passages, if any) are fetched before the model answers, and shown to the user.
+    const question = messages[messages.length - 1].content;
+    const recalled = { memories: [], documents: [] };
+    if (useMeko) {
+      try {
+        const r = await person.search(userId, question, { scope: chatScope, familyId, limit: 5 });
+        recalled.memories = (r.memories || []).filter((x) => x.text).slice(0, 6);
+      } catch (_) { /* recall is best effort; the answer still uses the numbers */ }
+      for (const uid of ctx.documentOwners) {
+        const hits = await documents.searchDocuments(uid, question, 2).catch(() => []);
+        for (const h of hits) recalled.documents.push({ ...h, owner: uid === userId ? 'you' : ctx.nameOf(uid) });
+      }
+      if (recalled.memories.length || recalled.documents.length) {
+        steps.push({ tool: 'search_memory', args: { query: question.slice(0, 120) }, prefetched: true, label: 'Recalled from Meko',
+          result: { memories: recalled.memories.map(({ text, person: who, date }) => ({ text, person: who, date })), documentPassages: recalled.documents.map((d) => ({ document: d.document, owner: d.owner, text: d.text })) } });
+      }
+    }
     let answer = null;
     let followUps = [];
     for (let i = 0; i <= MAX_STEPS; i++) {
@@ -252,7 +270,13 @@ async function chat(familyId, userId, body, ip, deps = { llm }) {
     return {
       answer,
       followUps,
-      meko: { used: useMeko, stored: useMeko },
+      meko: {
+        used: useMeko,
+        stored: useMeko,
+        // Exactly what Meko returned and was given to the model (A4: visible context).
+        recalled: recalled.memories.map((x) => ({ id: x.id, text: x.text, person: x.person, date: x.date || null, own: x.person === 'you' })),
+        documents: recalled.documents.map((d) => ({ document: d.document, filename: d.filename, owner: d.owner, text: String(d.text).slice(0, 400) })),
+      },
       toolsUsed: steps.filter((s) => !s.prefetched).map((s) => ({ tool: s.tool, label: s.label, ok: !(s.result && s.result.error) })),
       elapsedMs: Date.now() - started,
       disclaimer: 'FinSight explains your own numbers. It is not investment advice.',

@@ -55,7 +55,7 @@ function getPool() {
 
 // Only the connect step is retried, so a statement never runs twice.
 const CONNECT_ATTEMPTS = () => Math.max(1, Number(process.env.DB_CONNECT_ATTEMPTS || 3));
-const isConnectFailure = (err) => /connection timeout|Connection terminated unexpectedly|ECONNRESET|ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH/i.test(`${err.message} ${err.code || ''}`);
+const isConnectFailure = (err) => /connection timeout|timeout exceeded when trying to connect|Connection terminated unexpectedly|ECONNRESET|ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH/i.test(`${err.message} ${err.code || ''}`);
 
 async function connect() {
   for (let attempt = 1; ; attempt++) {

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { createFakeMeko } = require('./helpers/fakeMeko');
 
 const fake = createFakeMeko();
-let call; let api; let a; let b; let c; let famA; let famC; let script = []; const systems = [];
+let call; let api; let a; let b; let c; let famA; let famC; let script = []; const systems = []; const prompts = [];
 
 test.before(async () => {
   const url = await fake.start();
@@ -16,7 +16,7 @@ test.before(async () => {
   await api.start();
   const llm = require('../lib/llm');
   llm.isConfigured = () => true;
-  llm.generateJson = async (prompt, opts = {}) => { systems.push(opts.system || ''); return { provider: 'stub', model: 'stub', json: script.shift() || { answer: 'ok' } }; };
+  llm.generateJson = async (prompt, opts = {}) => { systems.push(opts.system || ''); prompts.push(prompt); return { provider: 'stub', model: 'stub', json: script.shift() || { answer: 'ok' } }; };
   [a, b, c] = await Promise.all([api.newUser('pa'), api.newUser('pb'), api.newUser('pc')]);
   famA = (await call('POST', '/api/families', { token: a.token, body: { name: 'Family A' } })).body.family.id;
   famC = (await call('POST', '/api/families', { token: c.token, body: { name: 'Family C' } })).body.family.id;
@@ -158,7 +158,7 @@ test('the same question with Meko off: no memory tools offered, nothing stored',
   script = [{ tool: 'search_memory', args: { query: 'crypto' } }, { answer: 'ok' }];
   const off = await ask(false);
   assert.equal(off.status, 200, JSON.stringify(off.body));
-  assert.deepEqual(off.body.meko, { used: false, stored: false });
+  assert.equal(off.body.meko.used, false); assert.equal(off.body.meko.stored, false); assert.deepEqual(off.body.meko.recalled, []);
   assert.ok(!systems[0].includes('search_memory'), 'memory tool not offered');
   assert.match(systems[0], /MEKO IS OFF/);
   assert.equal((await memory(h)).body.memories.length, 0, 'nothing stored');
@@ -166,7 +166,32 @@ test('the same question with Meko off: no memory tools offered, nothing stored',
   systems.length = 0;
   script = [{ answer: 'ok' }];
   const on = await ask(true);
-  assert.deepEqual(on.body.meko, { used: true, stored: true });
+  assert.equal(on.body.meko.used, true); assert.equal(on.body.meko.stored, true);
   assert.ok(systems[0].includes('search_memory'));
   assert.equal((await memory(h)).body.memories.length, 1, 'stored with Meko on');
+});
+
+test('recall before reasoning: memories are fetched before the answer, shown, and can be forgotten', async () => {
+  const k = await api.newUser('pk');
+  for (const scope of ['meko_context', 'ai_analysis']) await call('POST', '/api/me/consents', { token: k.token, body: { scope, granted: true } });
+  const fid = (await call('POST', '/api/families', { token: k.token, body: { name: 'K Family' } })).body.family.id;
+  const ask = (text, useMeko = true) => call('POST', `/api/families/${fid}/assistant/chat`, { token: k.token, body: { useMeko, messages: [{ role: 'user', content: text }] } });
+  script = [{ answer: 'Noted.' }];
+  await ask('My rule: keep six months of emergency fund before buying a car.');
+
+  prompts.length = 0;
+  script = [{ answer: 'Your rule says six months first.' }];
+  const r = await ask('Can I buy a car now? emergency fund rule');
+  const rec = r.body.meko.recalled;
+  assert.ok(rec.length >= 1, JSON.stringify(r.body.meko));
+  assert.match(rec[0].text, /six months of emergency fund/);
+  assert.equal(rec[0].own, true);
+  assert.match(prompts[0], /six months of emergency fund/, 'the recalled memory reached the model before it answered');
+  assert.ok(r.body.toolsUsed.every((t) => t.tool !== 'search_memory'), 'prefetched recall is not listed as a separate tool call');
+
+  // Forget straight from the chat.
+  assert.equal((await call('DELETE', `/api/me/memory/${rec[0].id}`, { token: k.token })).status, 200);
+  script = [{ answer: 'ok' }];
+  const after = await ask('Can I buy a car now? emergency fund rule', false);
+  assert.deepEqual(after.body.meko.recalled, []);
 });
