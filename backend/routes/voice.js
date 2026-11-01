@@ -8,7 +8,16 @@ const rateLimit = require('express-rate-limit');
 const { wrap, validate, HttpError } = require('../lib/http');
 
 const router = express.Router();
-const MODEL = () => process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts';
+// Voice models in order of preference. Each has its own free-tier quota, so when one
+// runs out (429) or is retired (404) the next is tried; a failing model is skipped for
+// a while instead of being retried on every sentence.
+const MODELS = () => [...new Set([
+  ...(process.env.GEMINI_TTS_MODEL ? [process.env.GEMINI_TTS_MODEL] : []),
+  ...(process.env.GEMINI_TTS_FALLBACK_MODELS || 'gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview,gemini-3.8-flash-lite-tts,gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts')
+    .split(',').map((s) => s.trim()).filter(Boolean),
+])];
+const MODEL = () => MODELS()[0];
+const skipUntil = new Map();
 const VOICES = ['Kore', 'Aoede', 'Puck', 'Charon', 'Leda', 'Orus', 'Zephyr'];
 const cache = new Map(); // key -> Buffer (LRU, 60 entries)
 
@@ -40,22 +49,37 @@ router.post('/tts', wrap(async (req, res) => {
     const style = lang === 'hi-IN'
       ? 'Read this aloud in natural Hindi, warm and clear, like a friendly family finance guide:'
       : 'Read this aloud in a warm, clear Indian English accent, like a friendly family finance guide. Pronounce Hindi words naturally:';
-    let r;
-    try {
-      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL())}:generateContent`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(30000),
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `${style}\n\n${text}` }] }],
-          generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
-        }),
-      });
-    } catch (err) {
-      throw new HttpError(504, 'TTS_TIMEOUT', `Voice service did not respond: ${err.message}`);
+    const all = MODELS();
+    const order = [...all.filter((m) => !(skipUntil.get(m) > Date.now())), ...all.filter((m) => skipUntil.get(m) > Date.now())];
+    let j = null; let lastErr = null;
+    for (const model of order) {
+      let r;
+      try {
+        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(30000),
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `${style}\n\n${text}` }] }],
+            generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
+          }),
+        });
+      } catch (err) {
+        lastErr = new HttpError(504, 'TTS_TIMEOUT', `Voice service did not respond: ${err.message}`);
+        skipUntil.set(model, Date.now() + 5 * 60000);
+        continue;
+      }
+      const body = await r.json().catch(() => ({}));
+      if (r.ok) { j = body; skipUntil.delete(model); break; }
+      lastErr = new HttpError(r.status === 429 ? 429 : 502, r.status === 429 ? 'TTS_QUOTA' : 'TTS_FAILED', (body.error?.message || `TTS HTTP ${r.status}`).slice(0, 200));
+      if ([404, 429, 500, 502, 503, 504].includes(r.status)) {
+        // Daily quota: skip for an hour; overload or retired: a few minutes.
+        skipUntil.set(model, Date.now() + (r.status === 429 ? 60 : 5) * 60000);
+        continue;
+      }
+      throw lastErr;
     }
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new HttpError(r.status === 429 ? 429 : 502, r.status === 429 ? 'TTS_QUOTA' : 'TTS_FAILED', (j.error?.message || `TTS HTTP ${r.status}`).slice(0, 200));
+    if (!j) throw lastErr || new HttpError(502, 'TTS_FAILED', 'No voice model is available right now.');
     const part = j.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)?.inlineData;
     if (!part?.data) throw new HttpError(502, 'TTS_FAILED', 'Voice service returned no audio.');
     const rate = Number((part.mimeType || '').match(/rate=(\d+)/)?.[1] || 24000);
