@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { createFakeMeko } = require('./helpers/fakeMeko');
 
 const fake = createFakeMeko();
-let call; let api; let a; let b; let c; let famA; let famC; let script = [];
+let call; let api; let a; let b; let c; let famA; let famC; let script = []; const systems = [];
 
 test.before(async () => {
   const url = await fake.start();
@@ -16,7 +16,7 @@ test.before(async () => {
   await api.start();
   const llm = require('../lib/llm');
   llm.isConfigured = () => true;
-  llm.generateJson = async () => ({ provider: 'stub', model: 'stub', json: script.shift() || { answer: 'ok' } });
+  llm.generateJson = async (prompt, opts = {}) => { systems.push(opts.system || ''); return { provider: 'stub', model: 'stub', json: script.shift() || { answer: 'ok' } }; };
   [a, b, c] = await Promise.all([api.newUser('pa'), api.newUser('pb'), api.newUser('pc')]);
   famA = (await call('POST', '/api/families', { token: a.token, body: { name: 'Family A' } })).body.family.id;
   famC = (await call('POST', '/api/families', { token: c.token, body: { name: 'Family C' } })).body.family.id;
@@ -146,4 +146,27 @@ test('what-if checks, breaking-point tests and concall searches are remembered',
   assert.match(texts, /what would happen if I went ahead with a ₹9,00,000 purchase/);
   assert.match(texts, /I tested my breaking point in FinSight: A one-time emergency expense/);
   assert.match(texts, /latest earnings call of Tata Consultancy Services \(TCS\) in FinSight; it wasn't available automatically/);
+});
+
+test('the same question with Meko off: no memory tools offered, nothing stored', async () => {
+  const h = await api.newUser('ph');
+  for (const scope of ['meko_context', 'ai_analysis']) await call('POST', '/api/me/consents', { token: h.token, body: { scope, granted: true } });
+  const fid = (await call('POST', '/api/families', { token: h.token, body: { name: 'H Family' } })).body.family.id;
+  const ask = (useMeko) => call('POST', `/api/families/${fid}/assistant/chat`, { token: h.token, body: { useMeko, messages: [{ role: 'user', content: 'I never buy crypto. Should I?' }] } });
+
+  systems.length = 0;
+  script = [{ tool: 'search_memory', args: { query: 'crypto' } }, { answer: 'ok' }];
+  const off = await ask(false);
+  assert.equal(off.status, 200, JSON.stringify(off.body));
+  assert.deepEqual(off.body.meko, { used: false, stored: false });
+  assert.ok(!systems[0].includes('search_memory'), 'memory tool not offered');
+  assert.match(systems[0], /MEKO IS OFF/);
+  assert.equal((await memory(h)).body.memories.length, 0, 'nothing stored');
+
+  systems.length = 0;
+  script = [{ answer: 'ok' }];
+  const on = await ask(true);
+  assert.deepEqual(on.body.meko, { used: true, stored: true });
+  assert.ok(systems[0].includes('search_memory'));
+  assert.equal((await memory(h)).body.memories.length, 1, 'stored with Meko on');
 });

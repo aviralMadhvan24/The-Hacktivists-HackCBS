@@ -95,6 +95,14 @@ test('Ask FinSight: consent gate, starters, and a clear message when AI is unava
   await page.getByRole('link', { name: 'Ask FinSight' }).first().click();
   await expect(page.getByRole('heading', { level: 1, name: /Namaste/ })).toBeVisible();
   await expect(page.locator('.home-side')).toBeVisible(); // side cards and tools
+  // Meko on/off switch (same flow with and without memory)
+  const sw = page.getByRole('switch', { name: /Meko/ });
+  await expect(sw).toHaveAttribute('aria-checked', 'true');
+  await sw.click();
+  await expect(page.getByText('Meko is off for this chat.')).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/meko-off.png` });
+  await sw.click();
+  await expect(page.getByText('Meko is off for this chat.')).toHaveCount(0);
   await expect(page.getByText(/turn on/i).first()).toBeVisible();
   await page.getByRole('link', { name: 'Settings' }).first().click();
   await page.getByRole('checkbox', { name: 'AI analysis of my finances' }).check();

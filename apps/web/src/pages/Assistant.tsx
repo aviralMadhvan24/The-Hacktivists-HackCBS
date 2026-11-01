@@ -14,7 +14,7 @@ import { PageHeader } from '../App';
 
 const Orb = lazy(() => import('../components/Orb'));
 
-interface Msg { role: 'user' | 'assistant'; content: string; tools?: { tool: string; label: string; ok: boolean }[]; followUps?: string[]; error?: boolean; voice?: boolean }
+interface Msg { role: 'user' | 'assistant'; content: string; tools?: { tool: string; label: string; ok: boolean }[]; followUps?: string[]; error?: boolean; voice?: boolean; meko?: { used: boolean; stored: boolean } }
 
 const STARTERS = [
   'Agar meri naukri 6 mahine ke liye chali jaye to hum kitne mahine chal payenge?',
@@ -98,6 +98,9 @@ export default function Assistant() {
   const [handsFree, setHandsFree] = useState(false);
   const [scope, setScope] = useState<'me' | 'family'>(() => (readStored('fs.chatScope', 'me') === 'family' ? 'family' : 'me'));
   useEffect(() => writeStored('fs.chatScope', scope), [scope]);
+  // Meko on/off for this chat: shows the same flow with and without memory (demo of A1).
+  const [useMeko, setUseMeko] = useState(() => readStored('fs.useMeko', '1') !== '0');
+  useEffect(() => writeStored('fs.useMeko', useMeko ? '1' : '0'), [useMeko]);
   const [voiceStyle, setVoiceStyle] = useState<'natural' | 'browser'>(() => (readStored('fs.voiceStyle', 'natural') === 'browser' ? 'browser' : 'natural'));
   useEffect(() => writeStored('fs.voiceStyle', voiceStyle), [voiceStyle]);
   const [caption, setCaption] = useState('');
@@ -118,13 +121,14 @@ export default function Assistant() {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       const limit = setTimeout(() => ctrl.abort(), 100000);
-      return api.post<{ answer: string; followUps: string[]; toolsUsed: Msg['tools'] }>(`/families/${familyId}/assistant/chat`, {
+      return api.post<{ answer: string; followUps: string[]; toolsUsed: Msg['tools']; meko?: Msg['meko'] }>(`/families/${familyId}/assistant/chat`, {
         scope,
+        useMeko,
         messages: history.filter((m) => !m.error).slice(-12).map(({ role, content }) => ({ role, content })),
       }, { signal: ctrl.signal }).finally(() => clearTimeout(limit));
     },
     onSuccess: async (r, vars) => {
-      setMessages((m) => [...m, { role: 'assistant', content: r.answer, tools: r.toolsUsed, followUps: r.followUps }]);
+      setMessages((m) => [...m, { role: 'assistant', content: r.answer, tools: r.toolsUsed, followUps: r.followUps, meko: r.meko }]);
       setCaption(r.answer);
       if (voiceOn && voice.support.speak) {
         await voice.speak(r.answer, lang, voiceStyle);
@@ -179,11 +183,16 @@ export default function Assistant() {
           <button role="radio" aria-checked={scope === 'me'} className={`tab ${scope === 'me' ? 'active' : ''}`} onClick={() => setScope('me')}>Just me</button>
           <button role="radio" aria-checked={scope === 'family'} className={`tab ${scope === 'family' ? 'active' : ''}`} onClick={() => setScope('family')}>Family planning</button>
         </div>
+        <button className={`meko-switch ${useMeko ? 'on' : 'off'}`} role="switch" aria-checked={useMeko} onClick={() => setUseMeko((v) => !v)}
+          title="Turn Meko memory on or off for this chat">
+          <Brain size={15} /> Meko {useMeko ? 'on' : 'off'}<span className="knob" aria-hidden />
+        </button>
       </PageHeader>
       <div className="content">
         {consents.data && !consented && (
           <Notice tone="warn">To chat, turn on <strong>AI analysis of my finances</strong> in <Link to="/settings">Settings</Link>. FinSight then reads your family's numbers to answer.</Notice>
         )}
+        {!useMeko && <Notice tone="warn"><strong>Meko is off for this chat.</strong> FinSight answers from your numbers only: it can't recall your goals, past decisions or documents, and nothing you say is remembered.</Notice>}
         {scope === 'family' && <p className="small muted" style={{ margin: '0 0 10px' }}>Family planning uses {family?.name || 'the family'}'s numbers and the memory of members who share it (<Link to="/memory">sharing settings</Link>).</p>}
         <div className="ask-layout home-layout">
           <HomeSide scope={scope} />
@@ -253,6 +262,9 @@ export default function Assistant() {
                       </div>
                     )}
                     <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                    {m.role === 'assistant' && m.meko && (
+                      <div className={`meko-tag ${m.meko.used ? 'on' : 'off'}`}><Brain size={11} /> {m.meko.used ? 'Meko on · this chat is remembered' : 'Meko off · numbers only, not remembered'}</div>
+                    )}
                     {m.role === 'assistant' && !m.error && voice.support.speak && (
                       <button className="btn btn-ghost btn-sm" style={{ marginTop: 6, paddingLeft: 0 }} onClick={() => { setCaption(m.content); voice.speak(m.content, lang, voiceStyle); }}><Volume2 size={14} /> Listen</button>
                     )}
