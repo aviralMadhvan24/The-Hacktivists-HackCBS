@@ -112,6 +112,10 @@ async function start() {
 }
 
 if (require.main === module) {
+  // Last-resort safety net: a dropped network connection (database, Meko, Gemini)
+  // must fail one request, not take the whole server down mid-demo. Errors are logged.
+  process.on('unhandledRejection', (err) => console.error('Unhandled rejection (server kept running):', err && err.stack ? err.stack : err));
+  process.on('uncaughtException', (err) => console.error('Uncaught exception (server kept running):', err && err.stack ? err.stack : err));
   start().catch((err) => { console.error('Startup failed:', err.message); process.exit(1); });
 }
 

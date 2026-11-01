@@ -60,7 +60,15 @@ const isConnectFailure = (err) => /connection timeout|timeout exceeded when tryi
 async function connect() {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await getPool().connect();
+      const client = await getPool().connect();
+      // A connection that drops while checked out emits 'error' on the client.
+      // Without a listener Node treats it as unhandled and kills the server
+      // (seen with Aeon on networks that change IP). The query then fails normally.
+      if (!client.__finsightErrorHandler) {
+        client.on('error', (err) => console.error('Postgres connection error:', err.message));
+        client.__finsightErrorHandler = true;
+      }
+      return client;
     } catch (err) {
       if (attempt >= CONNECT_ATTEMPTS() || !isConnectFailure(err)) throw err;
     }

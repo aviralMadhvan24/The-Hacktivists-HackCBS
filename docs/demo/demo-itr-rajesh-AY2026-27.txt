@@ -1,0 +1,27 @@
+DEMO DOCUMENT - NOT A REAL TAX RETURN. Made-up figures for the FinSight demo family.
+
+INCOME TAX RETURN SUMMARY (ITR-1 style), Assessment Year 2026-27 (Financial Year 2025-26)
+Taxpayer: Rajesh Sharma (demo user)
+Tax regime: New tax regime
+
+Income from salary
+  Gross salary: Rs 17,40,000
+  Standard deduction: Rs 75,000
+  Income from salary (net): Rs 16,65,000
+
+Income from other sources
+  Savings account interest: Rs 14,200
+  Fixed deposit interest: Rs 21,600
+
+Gross total income: Rs 17,00,800
+Total taxable income: Rs 17,00,800
+
+Tax computation
+  Tax on total income: Rs 1,85,240
+  Health and education cess (4%): Rs 7,410
+  Total tax liability: Rs 1,92,650
+  Tax deducted at source (TDS) by employer: Rs 1,94,000
+  Refund due: Rs 1,350
+
+Employer: (demo) Sharma Engineering Pvt Ltd
+Bank account for refund: HDFC Bank (demo)
