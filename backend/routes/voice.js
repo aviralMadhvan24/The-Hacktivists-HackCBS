@@ -46,9 +46,9 @@ router.post('/tts', wrap(async (req, res) => {
   const key = crypto.createHash('sha256').update(`${MODEL()}|${voice}|${lang}|${text}`).digest('hex');
   let wav = cache.get(key);
   if (!wav) {
-    const style = lang === 'hi-IN'
-      ? 'Read this aloud in natural Hindi, warm and clear, like a friendly family finance guide:'
-      : 'Read this aloud in a warm, clear Indian English accent, like a friendly family finance guide. Pronounce Hindi words naturally:';
+    // Only the answer text is sent. Newer TTS models read any style instruction aloud
+    // ("Read this aloud in a warm…"), so tone comes from the chosen voice instead, and
+    // the models detect Hindi or English from the text itself.
     const all = MODELS();
     const order = [...all.filter((m) => !(skipUntil.get(m) > Date.now())), ...all.filter((m) => skipUntil.get(m) > Date.now())];
     let j = null; let lastErr = null;
@@ -60,7 +60,7 @@ router.post('/tts', wrap(async (req, res) => {
           signal: AbortSignal.timeout(30000),
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: `${style}\n\n${text}` }] }],
+            contents: [{ parts: [{ text }] }],
             generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
           }),
         });
