@@ -168,7 +168,7 @@ function EvaluationView({ e }: { e: any }) {
           {f.research.length === 0 && f.familyContext.length === 0 && <p className="muted">No saved concall analyses or family notes relate to this stock yet.</p>}
           <ul className="list-plain">
             {f.research.map((r: any) => <li key={r.quarter}><Badge tone="info">Concall {r.quarter}</Badge> <span className="small">{r.summary}</span></li>)}
-            {f.familyContext.map((m: any) => <li key={m.title + m.date}><Badge>{m.kind.replace('_', ' ')}</Badge> <strong className="small">{m.title}</strong> <span className="small muted">{m.text}</span></li>)}
+            {f.familyContext.map((m: any, i: number) => <li key={`${i}-${m.date || ''}`}><Badge>{m.person ? `Meko · ${m.person}` : 'Meko'}</Badge>{m.title && <> <strong className="small">{m.title}</strong></>} <span className="small muted">{m.text}</span></li>)}
           </ul>
         </Card>
       </div>
